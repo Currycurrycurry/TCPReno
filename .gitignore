@@ -1,3 +1,6 @@
 .DS_Store
 build/
 .vagrant/
+__pycache__/
+ubuntu-xenial-16.04-cloudimg-console.log
+random.input

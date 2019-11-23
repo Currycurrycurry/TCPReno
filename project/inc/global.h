@@ -26,7 +26,7 @@ typedef struct {
 
 
 typedef struct {
-	int socket;   
+	int socket;
 	pthread_t thread_id;
 	uint16_t my_port;
 	uint16_t their_port;
