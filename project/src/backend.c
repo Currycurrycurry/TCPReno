@@ -31,12 +31,11 @@ int check_ack(cmu_socket_t * sock, uint32_t seq){
 void handle_message(cmu_socket_t * sock, char* pkt){
   char* rsp;
   uint8_t flags = get_flags(pkt);
-  uint32_t data_len, seq;
+  uint32_t data_len, seq, ack;
   socklen_t conn_len = sizeof(sock->conn);
   switch(flags){
     case ACK_FLAG_MASK:
       // no matter what ack number we have received, we won't let it go
-      uint32_t ack;
       // TODO: do we need the lock bellow?
       while(pthread_mutex_lock(&(sock->window.ack_lock)) != 0);
       ack = sock->window.last_ack_received = get_ack(pkt);
@@ -246,7 +245,6 @@ void single_send(cmu_socket_t * sock, char* data, int buf_len){
 
         // we have more packets to send
         if (window_has_unsent(wnd, pkt)) {
-          assert(pkt != NULL);
           sendto(sockfd, pkt->msg, pkt->len, 0, (struct sockaddr*) &(sock->conn), conn_len);
         }
 
