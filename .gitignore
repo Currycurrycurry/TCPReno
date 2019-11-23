@@ -5,3 +5,6 @@ build/
 __pycache__/
 ubuntu-xenial-16.04-cloudimg-console.log
 random.input
+project/client
+project/server
+project/test/testing_server
