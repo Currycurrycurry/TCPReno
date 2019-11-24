@@ -25,6 +25,7 @@ typedef struct {
   uint32_t len;
   char* msg;
   int ack_cnt;
+  clock_t sent_time;
 } pkt_t;
 
 typedef struct {
@@ -39,8 +40,11 @@ typedef struct {
 typedef struct {
 	uint32_t last_seq_received;
 	uint32_t last_ack_received;
+	// the msg is the full packet with header
 	pkt_window_t* send_wnd;
+	// note that msg in recv_wnd is raw data
 	pkt_window_t* recv_wnd;
+
 	pthread_mutex_t ack_lock;
 } window_t;
 
