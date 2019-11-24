@@ -17,16 +17,36 @@
 #define TRUE 1
 #define FALSE 0
 
+#define MAX_WND_SIZE 32
+typedef struct {
+  uint32_t buf_len;
+  uint32_t seq;
+  uint32_t ack_waiting_for;
+  uint32_t len;
+  char* msg;
+  int ack_cnt;
+} pkt_t;
+
+typedef struct {
+  pkt_t* queue[MAX_WND_SIZE];
+  int siz;
+  int front;
+  int next;
+  int end;
+ } pkt_window_t;
+
 
 typedef struct {
 	uint32_t last_seq_received;
 	uint32_t last_ack_received;
+	pkt_window_t* send_wnd;
+	pkt_window_t* recv_wnd;
 	pthread_mutex_t ack_lock;
 } window_t;
 
 
 typedef struct {
-	int socket;   
+	int socket;
 	pthread_t thread_id;
 	uint16_t my_port;
 	uint16_t their_port;
