@@ -239,6 +239,8 @@ void window_mark_receive(pkt_window_t* wnd, int ack) {
   // theoritically speaking, binary search can be applied, but for simplicity we'll just iterate through all sent packets
   for (int i = window_inc(wnd->front); i != wnd->next; i = window_inc(i)) {
     wnd->queue[i]->ack_cnt++;
+   
+
     if (wnd->queue[i]->ack_waiting_for == ack) {
       break;
     }
@@ -315,9 +317,26 @@ void single_send(cmu_socket_t * sock, char* data, int buf_len){
         // try to receive data
         check_for_data(sock, NO_WAIT);
 
-        // check for retransmission
+        // check for time-out retransmission
         if (!window_empty(wnd) && (float)((clock() - window_front_pkt(wnd)->sent_time) / CLOCKS_PER_SEC) > TIMEOUT_INTERVAL) {
+          //TODO: by Zhou yucheng
         }
+
+        // fast retransmission: check for 3 duplicate ACK retransmission
+        // to ensure it happens before timeout of the pkt expires 
+        if (!window_empty(wnd)){
+          for (int i = window_inc(wnd->front); i != wnd->end; i = window_inc(i)) {
+            if ((float)((clock() - wnd->queue[i]->sent_time) / CLOCKS_PER_SEC) < TIMEOUT_INTERVAL && wnd->queue[i]->ack_cnt>=3){
+            //resend segment 
+            sendto(sockfd,wnd->queue[i]->msg,wnd->queue[i]->len,0,(struct sockaddr*) &(sock->conn),conn_len);
+            wnd->queue[i]->sent_time = clock(); // reset the sent_time
+            }
+          }
+        }
+
+       
+
+
       }
     }
 }
