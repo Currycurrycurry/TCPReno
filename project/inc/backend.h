@@ -7,5 +7,5 @@
 int check_ack(cmu_socket_t * dst, uint32_t seq);
 void check_for_data(cmu_socket_t * dst, int flags);
 void * begin_backend(void * in);
-
+void tcp_xmit_timer(cmu_tcpcb * tp,struct timeval * sent_time);
 #endif
