@@ -35,10 +35,10 @@ int cmu_socket(cmu_socket_t * dst, int flag, int port, char * serverIP){
   dst->type = flag;
   dst->dying = FALSE;
   pthread_mutex_init(&(dst->death_lock), NULL);
-  dst->window.send_wnd = create_pkt_window();
-  dst->window.recv_wnd = create_pkt_window();
   dst->window.last_ack_received = 0;
   dst->window.last_seq_received = 0;
+  dst->window.send_wnd = create_pkt_window();
+  dst->window.recv_wnd = create_pkt_window();
   pthread_mutex_init(&(dst->window.ack_lock), NULL);
 
   if(pthread_cond_init(&dst->wait_cond, NULL) != 0){
