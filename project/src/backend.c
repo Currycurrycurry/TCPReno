@@ -323,15 +323,16 @@ void single_send(cmu_socket_t * sock, char* data, int buf_len){
         }
 
         // fast retransmission: check for 3 duplicate ACK retransmission
-        // to ensure it happens before timeout of the earliest acked pkt expires 
-        if(!window_empty(wnd) && (float)((clock() - window_front_pkt(wnd)->sent_time) / CLOCKS_PER_SEC) < TIMEOUT_INTERVAL)
-        for (int i = window_inc(wnd->front); i != wnd->end; i = window_inc(i)) {
-          if(wnd->queue[i]->ack_cnt==3){
-          //resend segment 
-          sendto(sockfd,wnd->queue[i]->msg,wnd->queue[i]->len,0,(struct sockaddr*) &(sock->conn),conn_len);
+        // to ensure it happens before timeout of the pkt expires 
+        if (!window_empty(wnd)){
+          for (int i = window_inc(wnd->front); i != wnd->end; i = window_inc(i)) {
+            if ((float)((clock() - wnd->queue[i]->sent_time) / CLOCKS_PER_SEC) < TIMEOUT_INTERVAL && wnd->queue[i]->ack_cnt>=3){
+            //resend segment 
+            sendto(sockfd,wnd->queue[i]->msg,wnd->queue[i]->len,0,(struct sockaddr*) &(sock->conn),conn_len);
+            wnd->queue[i]->sent_time = clock(); // reset the sent_time
+            }
+          }
         }
-       
-    }
 
        
 
