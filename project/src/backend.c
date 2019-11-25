@@ -33,7 +33,9 @@ void handle_message(cmu_socket_t * sock, char* pkt){
   uint8_t flags = get_flags(pkt);
   uint32_t data_len, seq, ack;
   socklen_t conn_len = sizeof(sock->conn);
-  switch(flags){
+  pkt_window_t* wnd;
+  pkt_t* wnd_pkt;
+  switch(flags) {
     case ACK_FLAG_MASK:
       // no matter what ack number we have received, we won't let it go
       // TODO: do we need the lock bellow?
@@ -51,27 +53,36 @@ void handle_message(cmu_socket_t * sock, char* pkt){
     //   sock->window.last_seq_received = get_seq(pkt);
     default:
       seq = get_seq(pkt);
-      rsp = create_packet_buf(sock->my_port, ntohs(sock->conn.sin_port), seq, seq+1, 
+      // TODO: the respond seq number should be the initial seq number
+      rsp = create_packet_buf(sock->my_port, ntohs(sock->conn.sin_port), seq, seq + get_plen(pkt) - DEFAULT_HEADER_LEN,
         DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, ACK_FLAG_MASK, 1, 0, NULL, NULL, 0);
       sendto(sock->socket, rsp, DEFAULT_HEADER_LEN, 0, (struct sockaddr*) 
         &(sock->conn), conn_len);
       free(rsp);
 
-      if(seq > sock->window.last_seq_received || (seq == 0 && 
-        sock->window.last_seq_received == 0)){
-        
-        sock->window.last_seq_received = seq;
+      wnd = sock->window.recv_wnd;
+      if (window_empty(wnd) || (seq > window_front_pkt(wnd)->seq)) {
+        wnd_pkt = (pkt_t*)malloc(sizeof(pkt_t));
         data_len = get_plen(pkt) - DEFAULT_HEADER_LEN;
-        if(sock->received_buf == NULL){
-          sock->received_buf = malloc(data_len);
+        wnd_pkt->len = data_len;
+        wnd_pkt->msg = malloc(data_len);
+        wnd_pkt->seq = seq;
+        memcpy(wnd_pkt->msg, pkt + DEFAULT_HEADER_LEN, wnd_pkt->len);
+        window_recv_pkt(sock->window.recv_wnd, wnd_pkt);
+        while (!window_empty(wnd) && wnd->queue[window_inc(wnd->front)]->seq == sock->window.last_seq_received) {
+          wnd_pkt = window_pop_pkt(wnd);
+          if (sock->received_buf == NULL) {
+            sock->received_buf = malloc(data_len);
+          } else {
+            sock->received_buf = realloc(sock->received_buf, sock->received_len + data_len);
+          }
+          memcpy(sock->received_buf + sock->received_len, wnd_pkt->msg, data_len);
+          sock->received_len += data_len;
+          sock->window.last_seq_received += data_len;
+          pkt_free(wnd_pkt);
+          wnd_pkt = NULL;
         }
-        else{
-          sock->received_buf = realloc(sock->received_buf, sock->received_len + data_len);
-        }
-        memcpy(sock->received_buf + sock->received_len, pkt + DEFAULT_HEADER_LEN, data_len);
-        sock->received_len += data_len;
       }
-
       break;
   }
 }
@@ -132,9 +143,9 @@ void check_for_data(cmu_socket_t * sock, int flags){
 pkt_window_t* create_pkt_window() {
   pkt_window_t* wnd = (pkt_window_t*)malloc(sizeof(pkt_window_t));
   wnd->siz = 0;
-  wnd->front = MAX_WND_SIZE - 1;
-  wnd->next = 0;
-  wnd->end = 0;
+  wnd->front = MAX_WND_SIZE - 1; // front is index before the first sent packet
+  wnd->next = 0; // next is the next available unsent packet
+  wnd->end = 0; // end is the index of the last element in the queue
   return wnd;
 }
 
@@ -146,27 +157,49 @@ int window_empty(pkt_window_t* wnd) {
   return wnd->siz == 0;
 }
 
-int window_add_pkt(pkt_window_t* wnd, pkt_t* pkt) {
+int window_push_pkt(pkt_window_t* wnd, pkt_t* pkt) {
   if (window_full(wnd)) {
     return -1;
   }
   wnd->queue[wnd->end] = pkt;
   wnd->end = window_inc(wnd->end);
   wnd->siz++;
+  return 0;
 }
 
-int window_has_unsent(pkt_window_t* wnd, pkt_t* pkt) {
+pkt_t* window_pop_pkt(pkt_window_t* wnd) {
+  pkt_t* ret;
+  if (window_empty(wnd)) {
+    return NULL;
+  }
+  wnd->front = window_inc(wnd->front);
+  ret = wnd->queue[wnd->front];
+  wnd->queue[wnd->front] = NULL;
+  wnd->siz--;
+  return ret;
+}
+
+
+pkt_t* window_has_unsent(pkt_window_t* wnd) {
+  pkt_t* pkt;
   if (wnd->next != wnd->end) {
     pkt = wnd->queue[wnd->next];
     wnd->next = window_inc(wnd->next);
-    return TRUE;
+  } else {
+    pkt = NULL;
   }
-  pkt = NULL;
-  return FALSE;
+  return pkt;
 }
 
 int window_inc(int v) {
   return (v == MAX_WND_SIZE - 1) ? 0 : v + 1;
+}
+
+pkt_t* window_front_pkt(pkt_window_t* wnd) {
+  if (window_empty(wnd)) {
+    return NULL;
+  }
+  return wnd->queue[window_inc(wnd->front)];
 }
 
 void pkt_free(pkt_t* pkt) {
@@ -174,19 +207,48 @@ void pkt_free(pkt_t* pkt) {
   free(pkt);
 }
 
+/**
+ * @brief window_recv_pkt inserts one received packet into the recv_wnd of this socket in
+ * the order of seq number, it discards packets out of window.
+ * 
+ * @param wnd the wnd_recv of the socket
+ * @param pkt the packet received
+ */
+void window_recv_pkt(pkt_window_t* wnd, pkt_t* pkt) {
+  pkt_t* tmp;
+  for (int i = window_inc(wnd->front); i != wnd->end; i = window_inc(i)) {
+    if (wnd->queue[i]->seq > pkt->seq) {
+      do {
+        tmp = wnd->queue[i];
+        wnd->queue[i] = pkt;
+        pkt = tmp;
+        i = window_inc(i);
+      } while (i != wnd->end);
+      break;
+    }
+  }
+  if (!window_full(wnd)) {
+    window_push_pkt(wnd, pkt);
+  }
+}
+
+/**
+ * window_mark_receive marks one parket has been successfully received
+ */
 void window_mark_receive(pkt_window_t* wnd, int ack) {
   // theoritically speaking, binary search can be applied, but for simplicity we'll just iterate through all sent packets
   for (int i = window_inc(wnd->front); i != wnd->next; i = window_inc(i)) {
+    wnd->queue[i]->ack_cnt++;
     if (wnd->queue[i]->ack_waiting_for == ack) {
-      wnd->queue[i]->ack_cnt++;
       break;
     }
   }
   while (!window_empty(wnd) && wnd->queue[window_inc(wnd->front)]->ack_cnt > 0) {
-    wnd->front = window_inc(wnd->front);
-    pkt_free(wnd->queue[wnd->front]);
+    window_pop_pkt(wnd);
   }
 }
+
+#define TIMEOUT_INTERVAL 3
 
 /*
  * Param: sock - The socket to use for sending data
@@ -204,16 +266,16 @@ void single_send(cmu_socket_t * sock, char* data, int buf_len){
     char* data_offset = data;
     int sockfd, plen;
     size_t conn_len = sizeof(sock->conn);
-    uint32_t seq, ack;
+    uint32_t seq;
 
     // used for tracking the sent packages
     pkt_window_t* wnd = sock->window.send_wnd;
     pkt_t* pkt;
-    uint32_t initial_seq, terminal_seq;
+    // uint32_t initial_seq, terminal_seq;
 
-    seq = initial_seq = sock->window.last_ack_received;
+    seq =  sock->window.last_ack_received;
     // note that ack is the next byte the receiver is waiting for, so the initial seq number is the last ack number
-    terminal_seq = initial_seq + buf_len;
+    // terminal_seq = initial_seq + buf_len;
 
     sockfd = sock->socket; 
     if(buf_len > 0){
@@ -238,18 +300,24 @@ void single_send(cmu_socket_t * sock, char* data, int buf_len){
           }
           pkt->msg = msg;
           pkt->len = plen;
-          pkt->ack_waiting_for = seq + (buf_len - pkt->buf_len);
-          window_add_pkt(wnd, pkt);
+          seq += (pkt->buf_len - buf_len);
+          pkt->ack_waiting_for = seq;
+          window_push_pkt(wnd, pkt);
           data_offset = data_offset + plen - DEFAULT_HEADER_LEN;
         }
 
         // we have more packets to send
-        if (window_has_unsent(wnd, pkt)) {
+        if ((pkt = window_has_unsent(wnd))) {
+          pkt->sent_time = clock();
           sendto(sockfd, pkt->msg, pkt->len, 0, (struct sockaddr*) &(sock->conn), conn_len);
         }
 
         // try to receive data
         check_for_data(sock, NO_WAIT);
+
+        // check for retransmission
+        if (!window_empty(wnd) && (float)((clock() - window_front_pkt(wnd)->sent_time) / CLOCKS_PER_SEC) > TIMEOUT_INTERVAL) {
+        }
       }
     }
 }
@@ -266,11 +334,10 @@ void* begin_backend(void * in){
   int death, buf_len, send_signal;
   char* data;
 
-  while(TRUE){
-    while(pthread_mutex_lock(&(dst->death_lock)) !=  0);
+  while (TRUE) {
+    while (pthread_mutex_lock(&(dst->death_lock)) !=  0);
     death = dst->dying;
     pthread_mutex_unlock(&(dst->death_lock));
-    
     
     while(pthread_mutex_lock(&(dst->send_lock)) != 0);
     buf_len = dst->sending_len;
