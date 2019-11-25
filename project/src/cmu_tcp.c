@@ -93,7 +93,7 @@ int cmu_socket(cmu_socket_t * dst, int flag, int port, char * serverIP){
   dst->my_port = ntohs(my_addr.sin_port);
 
   uint32_t seq, ack;
-  har recv[DEFAULT_HEADER_LEN];
+  char recv[DEFAULT_HEADER_LEN];
   socklen_t conn_len = sizeof(dst->conn);
   switch (flag){
       /*
