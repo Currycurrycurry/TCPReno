@@ -238,9 +238,11 @@ void window_recv_pkt(pkt_window_t* wnd, pkt_t* pkt) {
 void window_mark_receive(pkt_window_t* wnd, int ack) {
   // theoritically speaking, binary search can be applied, but for simplicity we'll just iterate through all sent packets
   for (int i = window_inc(wnd->front); i != wnd->next; i = window_inc(i)) {
+    pthread_mutex_init(&wnd->queue[i]->ack_cnt_lock, NULL); 
+    while(pthread_mutex_lock(&wnd->queue[i]->ack_cnt_lock)!=0);
     wnd->queue[i]->ack_cnt++;
+    pthread_mutex_unlock(&wnd->queue[i]->ack_cnt_lock);
    
-
     if (wnd->queue[i]->ack_waiting_for == ack) {
       break;
     }

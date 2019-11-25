@@ -25,6 +25,7 @@ typedef struct {
   uint32_t len;
   char* msg;
   int ack_cnt;
+  pthread_mutex_t ack_cnt_lock;
   clock_t sent_time;
 } pkt_t;
 

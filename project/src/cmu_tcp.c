@@ -116,7 +116,7 @@ int cmu_socket(cmu_socket_t * dst, int flag, int port, char * serverIP){
               //not a SYN_FLAG or ACK_FLAG
               return EXIT_ERROR;
           }
-          pthread_mutex_lock(&(dst->window.ack_lock));
+          while(pthread_mutex_lock(&(dst->window.ack_lock))!=0);
           dst->window.last_ack_received = get_ack(recv);
           dst->window.last_seq_received = get_seq(recv);
           pthread_mutex_unlock(&(dst->window.ack_lock));
@@ -141,7 +141,7 @@ int cmu_socket(cmu_socket_t * dst, int flag, int port, char * serverIP){
               //not a SYN_FLAG
               return EXIT_ERROR;
           }
-          pthread_mutex_lock(&(dst->window.ack_lock));
+          while(pthread_mutex_lock(&(dst->window.ack_lock))!=0);
           dst->window.last_ack_received = get_ack(recv);
           dst->window.last_seq_received = get_seq(recv);
           pthread_mutex_unlock(&(dst->window.ack_lock));
@@ -162,7 +162,7 @@ int cmu_socket(cmu_socket_t * dst, int flag, int port, char * serverIP){
               //not a ACK_FLAG
               return EXIT_ERROR;
           }
-          pthread_mutex_lock(&(dst->window.ack_lock));
+          while(pthread_mutex_lock(&(dst->window.ack_lock))!=0);
           dst->window.last_ack_received = get_ack(recv);
           dst->window.last_seq_received = get_seq(recv);
           pthread_mutex_unlock(&(dst->window.ack_lock));
