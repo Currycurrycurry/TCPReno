@@ -37,6 +37,8 @@ int cmu_socket(cmu_socket_t * dst, int flag, int port, char * serverIP){
   pthread_mutex_init(&(dst->death_lock), NULL);
   dst->window.last_ack_received = 0;
   dst->window.last_seq_received = 0;
+  dst->window.send_wnd = create_pkt_window();
+  dst->window.recv_wnd = create_pkt_window();
   pthread_mutex_init(&(dst->window.ack_lock), NULL);
 
   if(pthread_cond_init(&dst->wait_cond, NULL) != 0){
@@ -60,14 +62,14 @@ int cmu_socket(cmu_socket_t * dst, int flag, int port, char * serverIP){
       my_addr.sin_family = AF_INET;
       my_addr.sin_addr.s_addr = htonl(INADDR_ANY);
       my_addr.sin_port = 0;
-      if (bind(sockfd, (struct sockaddr *) &my_addr, 
+      if (bind(sockfd, (struct sockaddr *) &my_addr,
         sizeof(my_addr)) < 0){
         perror("ERROR on binding");
         return EXIT_ERROR;
       }
 
       break;
-    
+
     case(TCP_LISTENER):
       bzero((char *) &conn, sizeof(conn));
       conn.sin_family = AF_INET;
@@ -75,9 +77,9 @@ int cmu_socket(cmu_socket_t * dst, int flag, int port, char * serverIP){
       conn.sin_port = htons((unsigned short)port);
 
       optval = 1;
-      setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, 
+      setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR,
            (const void *)&optval , sizeof(int));
-      if (bind(sockfd, (struct sockaddr *) &conn, 
+      if (bind(sockfd, (struct sockaddr *) &conn,
         sizeof(conn)) < 0){
           perror("ERROR on binding");
           return EXIT_ERROR;
@@ -91,6 +93,85 @@ int cmu_socket(cmu_socket_t * dst, int flag, int port, char * serverIP){
   }
   getsockname(sockfd, (struct sockaddr *) &my_addr, &len);
   dst->my_port = ntohs(my_addr.sin_port);
+
+  uint32_t seq, ack;
+  char recv[DEFAULT_HEADER_LEN];
+  socklen_t conn_len = sizeof(dst->conn);
+  switch (flag){
+      /*
+       * client send the first and third packets
+       * receive the second packet
+      */
+      case (TCP_INITATOR):
+          seq = (unsigned int)(rand());
+          char* first_packet_buf;
+          first_packet_buf = create_packet_buf(dst->my_port, dst->their_port,seq,0,
+                  DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, SYN_FLAG_MASK,32,0,NULL,NULL,0);
+
+          sendto(sockfd, first_packet_buf, DEFAULT_HEADER_LEN, 0, (struct sockaddr*) &(dst->conn), conn_len);
+          free(first_packet_buf);
+
+          recvfrom(dst->socket, recv, DEFAULT_HEADER_LEN, 0,(struct sockaddr *) &(dst->conn), &conn_len);
+          if(!(get_flags(recv) & SYN_FLAG_MASK)||!(get_flags(recv) & ACK_FLAG_MASK)){
+              //not a SYN_FLAG or ACK_FLAG
+              return EXIT_ERROR;
+          }
+          while(pthread_mutex_lock(&(dst->window.ack_lock))!=0);
+          dst->window.last_ack_received = get_ack(recv);
+          dst->window.last_seq_received = get_seq(recv);
+          pthread_mutex_unlock(&(dst->window.ack_lock));
+
+          seq = get_ack(recv);
+          ack = get_seq(recv)+1;
+          char* third_packet_buf;
+          third_packet_buf = create_packet_buf(dst->my_port, dst->their_port,seq,ack,
+                  DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, ACK_FLAG_MASK,32,0,NULL,NULL,0);
+
+          sendto(sockfd, third_packet_buf, DEFAULT_HEADER_LEN, 0, (struct sockaddr*) &(dst->conn), conn_len);
+          free(third_packet_buf);
+
+          break;
+      /*
+       * server send the second packet
+       * receive the first and third packets
+       */
+      case (TCP_LISTENER):
+          recvfrom(dst->socket, recv, DEFAULT_HEADER_LEN, 0,(struct sockaddr *) &(dst->conn), &conn_len);
+          if(!(get_flags(recv) & SYN_FLAG_MASK)){
+              //not a SYN_FLAG
+              return EXIT_ERROR;
+          }
+          while(pthread_mutex_lock(&(dst->window.ack_lock))!=0);
+          dst->window.last_ack_received = get_ack(recv);
+          dst->window.last_seq_received = get_seq(recv);
+          pthread_mutex_unlock(&(dst->window.ack_lock));
+
+          seq = (unsigned int)(rand());
+          ack = get_seq(recv)+1;
+
+          char* second_packet_buf;
+          second_packet_buf = create_packet_buf(dst->my_port, dst->their_port,seq,ack,
+                  DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, SYN_FLAG_MASK|ACK_FLAG_MASK,32,0,NULL,NULL,0);
+
+          sendto(sockfd, second_packet_buf, DEFAULT_HEADER_LEN, 0, (struct sockaddr*) &(dst->conn), conn_len);
+          free(second_packet_buf);
+
+          memset(&recv, 0, sizeof(recv));
+          recvfrom(dst->socket, recv, DEFAULT_HEADER_LEN, 0,(struct sockaddr *) &(dst->conn), &conn_len);
+          if(!(get_flags(recv) & ACK_FLAG_MASK)){
+              //not a ACK_FLAG
+              return EXIT_ERROR;
+          }
+          while(pthread_mutex_lock(&(dst->window.ack_lock))!=0);
+          dst->window.last_ack_received = get_ack(recv);
+          dst->window.last_seq_received = get_seq(recv);
+          pthread_mutex_unlock(&(dst->window.ack_lock));
+
+          break;
+      default:
+          perror("Unknown Flag");
+          return EXIT_ERROR;
+  }
 
   pthread_create(&(dst->thread_id), NULL, begin_backend, (void *)dst);  
   return EXIT_SUCCESS;
