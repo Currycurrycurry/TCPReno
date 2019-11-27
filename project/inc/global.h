@@ -84,6 +84,7 @@ typedef struct{
 	uint32_t expect_ack;
 	uint8_t shakenhands;
 	uint8_t disconnect;
+    uint16_t disconnect_time;
 } connection_t;
 
 typedef struct {

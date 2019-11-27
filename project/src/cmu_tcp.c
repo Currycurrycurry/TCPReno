@@ -6,17 +6,19 @@
  */
 void fdu_initator_disconnect(cmu_socket_t * dst){
   char *rsp;
-  int unchecked_pkt_num,buf_len;
+  //int unchecked_pkt_num,buf_len;
   size_t conn_len = sizeof(dst->conn);
 
   //Make sure the child thread of the client is over
   dst->connection.disconnect = FIN_WAIT_1;
 
   //create and send FIN pkt with ack dst->sender->nextseq and seq dst->sender->nextseq
-  rsp = create_packet_buf(dst->my_port, ntohs(dst->conn.sin_port), dst->sender->nextseq, dst->sender->nextseq,
-                          DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, FIN_FLAG_MASK, 1, 0, NULL, NULL, 0);
+  //rsp = create_packet_buf(dst->my_port, ntohs(dst->conn.sin_port), dst->sender->nextseq, dst->sender->nextseq,
+    //                      DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, FIN_FLAG_MASK, 1, 0, NULL, NULL, 0);
 
   while(TRUE){
+      rsp = create_packet_buf(dst->my_port, ntohs(dst->conn.sin_port), dst->sender->nextseq, dst->receiver->expect_seq,
+                              DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, FIN_FLAG_MASK, 1, 0, NULL, NULL, 0);
     sendto(dst->socket, rsp, DEFAULT_HEADER_LEN, 0, (struct sockaddr*) &(dst->conn), conn_len);
     check_for_data(dst,TIMEOUT);
     if(dst->connection.disconnect == FIN_WAIT_2) {
@@ -40,7 +42,7 @@ void fdu_initator_disconnect(cmu_socket_t * dst){
     check_for_data(dst,NO_WAIT);
     gettimeofday(&current_time, NULL);
     // overtime
-    if(current_time.tv_sec - dst->timer->start_time.tv_sec > dst->timer->time_out.tv_sec) {
+    if(current_time.tv_sec - dst->timer->start_time.tv_sec > dst->connection.disconnect_time / 1000) {
       break;
     }
   }
