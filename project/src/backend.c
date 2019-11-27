@@ -344,6 +344,41 @@ void single_send(cmu_socket_t * sock, char* data, int buf_len){
 }
 
 /*
+ * Param: tp - the simple implement of tcp control block
+ * Param: sent_time - the sent_time in cmu_packet_t which is a time mark helping to calculate current RTT
+ *
+ * Purpose: using the lastly received packet's sent_time to update t_srtt and t_rttvar, thus generating a new RTO.
+ */
+void tcp_xmit_timer(cmu_tcpcb* tp,struct timeval* sent_time){
+    struct timeval time_now,rtt,t1;
+    long int delta;
+    gettimeofday(&time_now, NULL);//get current time
+    long int rtt_sec=(time_now.tv_sec)-(sent_time->tv_sec);
+    long int rtt_usec=rtt_sec*1000000+(time_now.tv_usec)-(sent_time->tv_usec);//get rtt time in microsecond precision
+    //the RFC793 algorithm
+    if((tp->t_srtt)!=0){
+        delta=rtt_usec-(tp->t_srtt>>TCP_RTT_SHIFT);
+        (tp->t_srtt)=(tp->t_srtt)+delta;
+        if(delta<0)delta=-delta;
+        delta=delta-(tp->t_rttvar>>TCP_RTTVAR_SHIFT);
+        (tp->t_rttvar)=(tp->t_rttvar)+delta;
+        long int rtoval=((tp->t_rttvar<<TCP_DEVIATION_SHIFT)>>TCP_RTTVAR_SHIFT)+(tp->t_srtt>>TCP_RTT_SHIFT);
+        if(rtoval<TCP_RTOMIN) rtoval=TCP_RTOMIN;
+        if(rtoval>TCP_RTOMAX) rtoval=TCP_RTOMAX;
+        if(rtoval>=1000000){
+            (tp->t_rto).tv_sec=rtoval/1000000;
+            (tp->t_rto).tv_usec=rtoval-((tp->t_rto).tv_sec)*1000000;
+        }else{
+            (tp->t_rto).tv_usec=rtoval;
+        }
+        printf("%u:%u\n",(tp->t_rto));
+    }else{
+        (tp->t_srtt) = rtt_usec << TCP_RTT_SHIFT;
+        (tp->t_rttvar) = rtt_usec << (TCP_RTTVAR_SHIFT-1);
+    }
+}
+
+/*
  * Param: in - the socket that is used for backend processing
  *
  * Purpose: To poll in the background for sending and receiving data to
