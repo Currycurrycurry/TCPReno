@@ -1,0 +1,283 @@
+#include "cmu_tcp.h"
+
+/*
+ * Disconnect from the initator, which could be either client or server.
+ * Param: dst - Destination port
+ */
+void fdu_initator_disconnect(cmu_socket_t * dst){
+  char *rsp;
+  int unchecked_pkt_num,buf_len;
+  size_t conn_len = sizeof(dst->conn);
+
+  //Make sure the child thread of the client is over
+  dst->connection.disconnect = FIN_WAIT_1;
+
+  //create and send FIN pkt with ack dst->sender->nextseq and seq dst->sender->nextseq
+  rsp = create_packet_buf(dst->my_port, ntohs(dst->conn.sin_port), dst->sender->nextseq, dst->sender->nextseq,
+                          DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, FIN_FLAG_MASK, 1, 0, NULL, NULL, 0);
+
+  while(TRUE){
+    sendto(dst->socket, rsp, DEFAULT_HEADER_LEN, 0, (struct sockaddr*) &(dst->conn), conn_len);
+    check_for_data(dst,TIMEOUT);
+    if(dst->connection.disconnect == FIN_WAIT_2) {
+      break;
+    }
+  }
+  free(rsp);
+
+  // wait for the FIN packet from listen
+  while(TRUE){
+    check_for_data(dst,NO_WAIT);
+    if(dst->connection.disconnect == TIME_WAIT) {
+      break;
+    }
+  }
+
+  struct timeval current_time;
+
+  // TIME_WAIT check for whether overtime frequently, if overtime then the listen is disconnected
+  while(TRUE) {
+    check_for_data(dst,NO_WAIT);
+    gettimeofday(&current_time, NULL);
+    // overtime
+    if(current_time.tv_sec - dst->timer->start_time.tv_sec > dst->timer->time_out.tv_sec) {
+      break;
+    }
+  }
+}
+
+/*
+ * Disconnect from the listener, which could be either client or server.
+ * Param: sock - the socket used
+ */
+void fdu_listener_disconnect(cmu_socket_t * sock){
+
+  size_t conn_len = sizeof(sock->conn);
+
+  //wait for the FIN pkt from the initator
+  while(TRUE) {
+    if(sock->connection.disconnect == CLOSE_WAIT) {
+      break;
+    }
+    check_for_data(sock,NO_WAIT);
+  }
+
+  //create and send FIN pkt with ack dst->sender->nextseq and seq dst->sender->nextseq
+  char* rsp = create_packet_buf(sock->my_port, ntohs(sock->conn.sin_port), sock->sender->nextseq, sock->sender->nextseq,
+                                DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, FIN_FLAG_MASK, 1, 0, NULL, NULL, 0);
+
+  sock->connection.disconnect = LAST_ACK;
+
+  while(TRUE){
+    sendto(sock->socket, rsp, DEFAULT_HEADER_LEN, 0, (struct sockaddr*) &(sock->conn), conn_len);
+    //check whether timeout or not
+    check_for_data(sock,TIMEOUT);
+    //if the initator is "CLOSED" then break
+    if(sock->connection.disconnect == CLOSED) {
+      break;
+    }
+  }
+  free(rsp);
+}
+
+
+ /*
+  * free the RAM uesd by sock and close the Monitor descriptor
+  */
+int fdu_free_socket(cmu_socket_t * sock) {
+  if(sock != NULL){
+    if(sock->received_buf != NULL)
+      free(sock->received_buf);
+    if(sock->sending_buf != NULL)
+      free(sock->sending_buf);
+
+    if(sock->timer != NULL) {
+      free(sock->timer);
+    }
+
+    if(sock->receiver != NULL) {
+      free(sock->receiver);
+    }
+    if(sock->sender != NULL) {
+      for(int i = 0; i < sock->sender->window_size; i++) {
+        if(sock->sender->win_packet_buffer[i] != NULL) {
+          free(sock->sender->win_packet_buffer[i]);
+        }
+      }
+      free(sock->sender);
+    }
+  }
+  else{
+    perror("ERORR Null socket\n");
+    return EXIT_ERROR;
+  }
+  return close(sock->socket);
+}
+
+/*
+ * Param: dst - The structure where socket information will be stored
+ * Param: flag - A flag indicating the type of socket(Listener / Initiator)
+ * Param: port - The port to either connect to, or bind to. (Based on flag)
+ * Param: ServerIP - The server IP to connect to if the socket is an initiator.
+ *
+ * Purpose: To construct a socket that will be used in various connections.
+ * The initiator socket can be used to connect to a listener socket.
+ *
+ * Return: The newly created socket will be stored in the dst parameter,
+ * and the value returned will provide error information.
+ *
+ */
+int cmu_socket(cmu_socket_t * dst, int flag, int port, char * serverIP){
+  int sockfd, optval;
+  socklen_t len;
+  struct sockaddr_in conn, my_addr;
+  len = sizeof(my_addr);
+
+  sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+  if (sockfd < 0){
+    perror("ERROR opening socket");
+    return EXIT_ERROR;
+  }
+  dst->their_port = port;
+  dst->socket = sockfd;
+  dst->received_buf = NULL;
+  dst->received_len = 0;
+  pthread_mutex_init(&(dst->recv_lock), NULL);
+  dst->sending_buf = NULL;
+  dst->sending_len = 0;
+  pthread_mutex_init(&(dst->send_lock), NULL);
+  dst->type = flag;
+  dst->dying = FALSE;
+  pthread_mutex_init(&(dst->death_lock), NULL);
+  dst->window.last_ack_received = 0;
+  dst->window.last_seq_received = 0;
+  pthread_mutex_init(&(dst->window.ack_lock), NULL);
+
+  if(pthread_cond_init(&dst->wait_cond, NULL) != 0){
+    perror("ERROR condition variable not set\n");
+    return EXIT_ERROR;
+  }
+
+
+  switch(flag){
+    case(TCP_INITATOR):
+      if(serverIP == NULL){
+        perror("ERROR serverIP NULL");
+        return EXIT_ERROR;
+      }
+      memset(&conn, 0, sizeof(conn));          
+      conn.sin_family = AF_INET;          
+      conn.sin_addr.s_addr = inet_addr(serverIP);  
+      conn.sin_port = htons(port); 
+      dst->conn = conn;
+
+      my_addr.sin_family = AF_INET;
+      my_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+      my_addr.sin_port = 0;
+      if (bind(sockfd, (struct sockaddr *) &my_addr, 
+        sizeof(my_addr)) < 0){
+        perror("ERROR on binding");
+        return EXIT_ERROR;
+      }
+
+      break;
+    
+    case(TCP_LISTENER):
+      bzero((char *) &conn, sizeof(conn));
+      conn.sin_family = AF_INET;
+      conn.sin_addr.s_addr = htonl(INADDR_ANY);
+      conn.sin_port = htons((unsigned short)port);
+
+      optval = 1;
+      setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, 
+           (const void *)&optval , sizeof(int));
+      if (bind(sockfd, (struct sockaddr *) &conn, 
+        sizeof(conn)) < 0){
+          perror("ERROR on binding");
+          return EXIT_ERROR;
+      }
+      dst->conn = conn;
+      break;
+
+    default:
+      perror("Unknown Flag");
+      return EXIT_ERROR;
+  }
+  getsockname(sockfd, (struct sockaddr *) &my_addr, &len);
+  dst->my_port = ntohs(my_addr.sin_port);
+
+//    uint32_t seq, ack;
+//    char recv[DEFAULT_HEADER_LEN];
+//    socklen_t conn_len = sizeof(dst->conn);
+
+
+  pthread_create(&(dst->thread_id), NULL, begin_backend, (void *)dst);  
+  return EXIT_SUCCESS;
+}
+
+/*
+ * Param: sock - The socket to close.
+ *
+ * Purpose: To remove any state tracking on the socket.
+ *
+ * Return: Returns error code information on the close operation.
+ *
+ */
+//int cmu_close(cmu_socket_t * sock){
+//  while(pthread_mutex_lock(&(sock->death_lock)) != 0);
+//  sock->dying = TRUE;
+//  pthread_mutex_unlock(&(sock->death_lock));
+//
+//  pthread_join(sock->thread_id, NULL);
+//
+//  if(sock != NULL){
+//    if(sock->received_buf != NULL)
+//      free(sock->received_buf);
+//    if(sock->sending_buf != NULL)
+//      free(sock->sending_buf);
+//  }
+//  else{
+//    perror("ERORR Null scoket\n");
+//    return EXIT_ERROR;
+//  }
+//  return close(sock->socket);
+//}
+
+/**
+ * terminate backend thread when haven't data to send and the resend is finished
+ *
+ */
+void close_backend(cmu_socket_t * dst) {
+
+  int unchecked_pkt_num,buf_len;
+  while(TRUE) {
+    while(pthread_mutex_lock(&(dst->sender_lock)) != 0);
+    //the num of data pkt unchecked
+    unchecked_pkt_num = dst->sender->nextseq - dst->sender->base;
+
+    while(pthread_mutex_lock(&(dst->send_lock)) != 0);
+    //the length of unsend buffer
+    buf_len = dst->sending_len;
+
+    //release the lock
+    if(buf_len == 0 && unchecked_pkt_num==0){
+      pthread_mutex_unlock(&(dst->send_lock));
+      pthread_mutex_unlock(&(dst->sender_lock));
+      break;
+    }
+    pthread_mutex_unlock(&(dst->send_lock));
+    pthread_mutex_unlock(&(dst->sender_lock));
+  }
+
+  while(pthread_mutex_lock(&(dst->death_lock)) != 0);
+  dst->dying = TRUE;
+  pthread_mutex_unlock(&(dst->death_lock));
+
+  // terminate another thread
+  pthread_join(dst->thread_id, NULL);
+}
+
+/*
+ * invoke the close function
+ */
+int cmu_close(cmu_socke

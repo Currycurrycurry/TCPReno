@@ -27,10 +27,37 @@
 #define CLOSED 6
 #define TIMER_ON 1
 
+#define MAX_WND_SIZE 32
+
 typedef struct {
-	uint32_t last_seq_received;
-	uint32_t last_ack_received;
-	pthread_mutex_t ack_lock;
+    uint32_t buf_len;
+    uint32_t seq;
+    uint32_t ack_waiting_for;
+    uint32_t len;
+    char* msg;
+    int ack_cnt;
+    pthread_mutex_t ack_cnt_lock;
+    clock_t sent_time;
+} pkt_t;
+
+typedef struct {
+    pkt_t* queue[MAX_WND_SIZE];
+    int siz;
+    int front;
+    int next;
+    int end;
+} pkt_window_t;
+
+
+typedef struct {
+    uint32_t last_seq_received;
+    uint32_t last_ack_received;
+    // the msg is the full packet with header
+    pkt_window_t* send_wnd;
+    // note that msg in recv_wnd is raw data
+    pkt_window_t* recv_wnd;
+
+    pthread_mutex_t ack_lock;
 } window_t;
 
 typedef struct{
