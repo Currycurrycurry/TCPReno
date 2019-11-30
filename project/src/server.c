@@ -1,4 +1,5 @@
 #include "cmu_tcp.h"
+#include <stdlib.h>
 
 /*
  * Param: sock - used for reading and writing to a connection
@@ -37,6 +38,7 @@ void functionality(cmu_socket_t  * sock){
  *
  */
 int main(int argc, char **argv) {
+    srand((unsigned)time(0) + 233);
 	int portno;
     char *serverip;
     char *serverport;
@@ -61,6 +63,7 @@ int main(int argc, char **argv) {
         while(1);
         exit(EXIT_FAILURE);
     }
+    printf("Socket initialize success!\n");
     return EXIT_SUCCESS;
     
 

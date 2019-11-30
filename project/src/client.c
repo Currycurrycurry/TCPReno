@@ -1,4 +1,5 @@
 #include "cmu_tcp.h"
+#include <stdlib.h>
 
 /*
  * Param: sock - used for reading and writing to a connection
@@ -46,6 +47,7 @@ void functionality(cmu_socket_t  * sock){
  *
  */
 int main(int argc, char **argv) {
+    srand((unsigned)time(0) + 2333);
 	int portno;
     char *serverip;
     char *serverport;
@@ -66,12 +68,14 @@ int main(int argc, char **argv) {
 
 
     if(cmu_socket(&socket, TCP_INITATOR, portno, serverip) < 0) {
-        printf("Socket initialize error, bad return code\n");
-        while(1);
+        // printf("Socket initialize error, bad return code\n");
+        // while(1);
         exit(EXIT_FAILURE);
     }
-    printf("Socket initialize success");
-    while(1);
+    // fflush(stdout);
+    // printf("Socket initialize success\n");
+    // fflush(stdout);
+    // while(1);
     return EXIT_SUCCESS;
     
     

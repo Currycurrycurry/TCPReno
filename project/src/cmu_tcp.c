@@ -5,6 +5,7 @@ int fdu_initiator_connect(cmu_socket_t *dst)
   printf("entering initiator connect\n");
   char recv[DEFAULT_HEADER_LEN];
   uint32_t seq = (unsigned int)(rand()), ack;
+  printf("initiator seq: %d\n", seq);
   socklen_t conn_len = sizeof(dst->conn);
   char *first_packet_buf;
 
@@ -35,6 +36,7 @@ int fdu_initiator_connect(cmu_socket_t *dst)
 
   sendto(dst->socket, third_packet_buf, DEFAULT_HEADER_LEN, 0, (struct sockaddr *)&(dst->conn), conn_len);
   free(third_packet_buf);
+  printf("initiator: seq(%d) ack(%d)\n", dst->window.last_seq_received, dst->window.last_ack_received);
   return 0;
 }
 
@@ -57,6 +59,7 @@ int fdu_listener_connect(cmu_socket_t *dst)
   pthread_mutex_unlock(&(dst->window.ack_lock));
 
   uint32_t seq = (unsigned int)(rand());
+  printf("listener seq: %d\n", seq);
   uint32_t ack = get_seq(recv) + 1;
 
   char *second_packet_buf;
@@ -78,7 +81,7 @@ int fdu_listener_connect(cmu_socket_t *dst)
   dst->window.last_ack_received = get_ack(recv);
   dst->window.last_seq_received = get_seq(recv);
   pthread_mutex_unlock(&(dst->window.ack_lock));
-
+  printf("listener: seq(%d) ack(%d)\n", dst->window.last_seq_received, dst->window.last_ack_received);
   return 0;
 }
 
@@ -184,6 +187,7 @@ int cmu_socket(cmu_socket_t *dst, int flag, int port, char *serverIP)
     dst->conn = conn;
 
     fdu_listener_connect(dst);
+    printf("exit listener connect\n");
     break;
 
   default:
@@ -193,8 +197,9 @@ int cmu_socket(cmu_socket_t *dst, int flag, int port, char *serverIP)
 
   getsockname(sockfd, (struct sockaddr *)&my_addr, &len);
   dst->my_port = ntohs(my_addr.sin_port);
-
+  printf("entering backend\n");
   pthread_create(&(dst->thread_id), NULL, begin_backend, (void *)dst);
+  printf("entered backend\n");
   return EXIT_SUCCESS;
 }
 
