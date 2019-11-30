@@ -141,7 +141,7 @@ int cmu_socket(cmu_socket_t *dst, int flag, int port, char *serverIP)
 
   switch (flag)
   {
-  case (TCP_initiator):
+  case (TCP_INITATOR):
     if (serverIP == NULL)
     {
       perror("ERROR serverIP NULL");
@@ -477,7 +477,7 @@ int cmu_close(cmu_socket_t *sock)
 {
   close_backend(sock);
   // execute 4 wave agreement according to differnt end type
-  if (sock->type == TCP_initiator)
+  if (sock->type == TCP_INITATOR)
     fdu_initiator_disconnect(sock);
   else
     fdu_listener_disconnect(sock);

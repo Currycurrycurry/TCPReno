@@ -121,19 +121,21 @@ def test_run_server_client():
                 TESTING_HOST_IP, TESTING_HOST_PORT, CODE_DIR)
     stop_server_cmd = 'tmux kill-session -t pytest_server'
     stop_client_cmd = 'tmux kill-session -t pytest_client'
+    print("\n")
+    print("start_server_cmd: ", start_server_cmd)
+    print("start_client_cmd: ", start_client_cmd)
     # import ipdb
     # ipdb.set_trace()
 
     with Connection(host=TESTING_HOST_IP, user='vagrant', connect_kwargs={'password':'vagrant'}) as conn:
         try:
-            print(start_client_cmd)
             conn.local(start_client_cmd)
             conn.local('tmux has-session -t pytest_client')
-            print(start_server_cmd)
             conn.run(start_server_cmd, shell=True)
             conn.run('tmux has-session -t pytest_server')
             # exit when server finished receiving file
             conn.run('while tmux has-session -t pytest_server; do sleep 1; done')
+            print("session ending")
         finally:
             try:
                 conn.local('tmux has-session -t pytest_client')
@@ -144,7 +146,8 @@ def test_run_server_client():
                 conn.run('tmux has-session -t pytest_server')
                 conn.run(stop_server_cmd)
             except Exception as e: # Ignore error here that may occur if server already shut down
-                pass 
+                pass
+
 
             
 def test_basic_reliable_data_transfer():

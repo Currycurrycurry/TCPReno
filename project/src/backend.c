@@ -87,11 +87,11 @@ void handle_message(cmu_socket_t * sock, char* pkt){
            * then server send FIN pkt currently
            * thus client must assure terminate until server had recieved AKC
            */
-          if(sock->type == TCP_initiator && sock->connection.disconnect == TIME_WAIT){
+          if(sock->type == TCP_INITATOR && sock->connection.disconnect == TIME_WAIT){
             start_timer(sock->timer);
             return;
           }
-          if(sock->type == TCP_initiator && sock->connection.disconnect == FIN_WAIT_2) {
+          if(sock->type == TCP_INITATOR && sock->connection.disconnect == FIN_WAIT_2) {
             sock->connection.disconnect = TIME_WAIT;
           }
           if(sock->type == TCP_LISTENER && sock->connection.disconnect == CONN_NO_WAIT) {
