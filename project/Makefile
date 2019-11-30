@@ -27,7 +27,7 @@ build_dir:
 
 # run tests
 test: all testing_server
-	head -c 100M </dev/urandom > $(TEST_DIR)/random.input
+	head -c 1M </dev/urandom > $(TEST_DIR)/random.input
 	sudo python2 -m pytest -vs -p no:warnings $(TEST_DIR)
 
 testing_server: $(OBJS)

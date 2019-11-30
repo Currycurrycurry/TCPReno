@@ -8,6 +8,7 @@
  *
  */
 void functionality(cmu_socket_t  * sock){
+    return;
     char buf[9898];
     FILE *fp;
     int n;
@@ -55,12 +56,17 @@ int main(int argc, char **argv) {
     portno = (unsigned short)atoi(serverport);
 
 
-    if(cmu_socket(&socket, TCP_LISTENER, portno, serverip) < 0)
+    if(cmu_socket(&socket, TCP_LISTENER, portno, serverip) < 0) {
+        printf("Socket initialize error, bad return code\n");
+        while(1);
         exit(EXIT_FAILURE);
+    }
+    return EXIT_SUCCESS;
+    
 
     functionality(&socket);
 
-    if(cmu_close(&socket) < 0)
-        exit(EXIT_FAILURE);
+    // if(cmu_close(&socket) < 0)
+    //     exit(EXIT_FAILURE);
     return EXIT_SUCCESS;
 }

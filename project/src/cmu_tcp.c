@@ -2,6 +2,7 @@
 
 int fdu_initiator_connect(cmu_socket_t *dst)
 {
+  printf("entering initiator connect\n");
   char recv[DEFAULT_HEADER_LEN];
   uint32_t seq = (unsigned int)(rand()), ack;
   socklen_t conn_len = sizeof(dst->conn);
@@ -39,6 +40,8 @@ int fdu_initiator_connect(cmu_socket_t *dst)
 
 int fdu_listener_connect(cmu_socket_t *dst)
 {
+  
+  printf("entering listener connect\n");
   char recv[DEFAULT_HEADER_LEN];
   socklen_t conn_len = sizeof(dst->conn);
   recvfrom(dst->socket, recv, DEFAULT_HEADER_LEN, 0, (struct sockaddr *)&(dst->conn), &conn_len);
@@ -94,6 +97,7 @@ int fdu_listener_connect(cmu_socket_t *dst)
  */
 int cmu_socket(cmu_socket_t *dst, int flag, int port, char *serverIP)
 {
+  printf("entering socket\n");
   int sockfd, optval;
   socklen_t len;
   struct sockaddr_in conn, my_addr;
