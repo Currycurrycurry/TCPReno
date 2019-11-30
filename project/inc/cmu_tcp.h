@@ -29,6 +29,18 @@ int cmu_write(cmu_socket_t * sock, char* src, int length);
 /*
  * You can add functions below this
  */
+
+void fdu_initiator_disconnect(cmu_socket_t * dst);
+void fdu_listener_disconnect(cmu_socket_t * sock);
+int fdu_free_socket(cmu_socket_t * sock);
+void close_backend(cmu_socket_t * dst);
+
+int fdu_initiator_connect(cmu_socket_t* dst);
+int fdu_listener_connect(cmu_socket_t* sock);
+
+
+
+
  
 
 #endif

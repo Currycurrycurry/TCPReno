@@ -20,7 +20,7 @@
 #define MAX_LEN 1400
 
 //socket types
-#define TCP_INITATOR 0
+#define TCP_initiator 0
 #define TCP_LISTENER 1
 
 //Max TCP Buffer
