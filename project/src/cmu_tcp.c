@@ -1,87 +1,100 @@
 #include "cmu_tcp.h"
 
+#define MAX_RETRY 5
+
+/**
+ * @brief fdu_initiator_connect connects the socket as an initiator.
+ * 
+ * It works in the following steps:
+ * 1. Create the SYN packet and use a maximum retry of 5, and a timeout of 3 seconds
+ *    for each trial to send the packet and wait for the SYNACK response. The status
+ *    transition is from CLOSED to ESTABLISHED.
+ * 2. Once the SYNACK response is received, the connection is actually established,
+ *    but we still want to send a pure ACK packet for respect, so we create another
+ *    response. Note that the response is not guaranteed to be received, and if it
+ *    is lost, the listener will still be in STATUS_LISTEN, which can be
+ *    troublesome, the solution is to carry an ACK number for subsequent SYN packet
+ * 3. Finally, we are now able to send and receive data from the other side, so we
+ *    initialize the window.sender and window.receiver, so that we are ready to
+ *    send and receive.
+ * 
+ * @param dst the socket that wants to connect.
+ */
 int fdu_initiator_connect(cmu_socket_t *dst)
 {
-  printf("entering initiator connect\n");
-  char recv[DEFAULT_HEADER_LEN];
-  uint32_t seq = (unsigned int)(rand()), ack;
-  printf("initiator seq: %d\n", seq);
-  socklen_t conn_len = sizeof(dst->conn);
-  char *first_packet_buf;
+  LOG_DEBUG("entering initiator connect");
+  dst->syn_seq = (unsigned int)(rand());
+  dst->status = STATUS_CLOSED;
 
-  first_packet_buf = create_packet_buf(dst->my_port, dst->their_port, seq, 0,
+  socklen_t conn_len = sizeof(dst->conn);
+  char *syn_packet_buf, *ack_packet_buf;
+
+  // TODO(Zhifeng): double-check the adv_window = 32
+  syn_packet_buf = create_packet_buf(dst->my_port, dst->their_port, dst->syn_seq, 0,
                                        DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, SYN_FLAG_MASK, 32, 0, NULL, NULL, 0);
 
-  sendto(dst->socket, first_packet_buf, DEFAULT_HEADER_LEN, 0, (struct sockaddr *)&(dst->conn), conn_len);
-  free(first_packet_buf);
+  int retry = 0;
+  do {
+    sendto(dst->socket, syn_packet_buf, DEFAULT_HEADER_LEN, 0, (struct sockaddr *)&(dst->conn), conn_len);
+    dst->status = STATUS_SYN_SENT;
+    check_for_data(dst, TIMEOUT);
+    ++retry;
+    LOG_INFO("%d th SYN packet sent", retry);
+  } while (dst->status != STATUS_ESTABLISHED && retry < MAX_RETRY);
+  free(syn_packet_buf);
+  syn_packet_buf = NULL;
 
-  recvfrom(dst->socket, recv, DEFAULT_HEADER_LEN, 0, (struct sockaddr *)&(dst->conn), &conn_len);//block 
-
-  if (!(get_flags(recv) & SYN_FLAG_MASK) || !(get_flags(recv) & ACK_FLAG_MASK))
-  {
-    //not a SYN_FLAG or ACK_FLAG
+  if (retry == MAX_RETRY) {
     return EXIT_ERROR;
   }
-  while (pthread_mutex_lock(&(dst->window.ack_lock)) != 0)
-    ;
-  dst->window.last_ack_received = get_ack(recv);
-  dst->window.last_seq_received = get_seq(recv);
-  pthread_mutex_unlock(&(dst->window.ack_lock));
 
-  seq = get_ack(recv);
-  ack = get_seq(recv) + 1;
-  char *third_packet_buf;
-  third_packet_buf = create_packet_buf(dst->my_port, dst->their_port, seq, ack,
+  // for ACK packet, seq does not matter, so we set it to be 0, see https://networkengineering.stackexchange.com/questions/48775/why-does-an-pure-ack-increment-the-sequence-number
+  ack_packet_buf = create_packet_buf(dst->my_port, dst->their_port, 0, dst->window.last_seq_received + 1,
                                        DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, ACK_FLAG_MASK, 32, 0, NULL, NULL, 0);
+  sendto(dst->socket, ack_packet_buf, DEFAULT_HEADER_LEN, 0, (struct sockaddr *)&(dst->conn), conn_len);
+  free(syn_packet_buf);
 
-  sendto(dst->socket, third_packet_buf, DEFAULT_HEADER_LEN, 0, (struct sockaddr *)&(dst->conn), conn_len);
-  free(third_packet_buf);
-  printf("initiator: seq(%d) ack(%d)\n", dst->window.last_seq_received, dst->window.last_ack_received);
+  // initialize sender
+  dst->window.sender = (sender_window_t*)malloc(sizeof(sender_window_t));
+  dst->window.sender->base = dst->syn_seq + 1; // we'll start to send the first packet from here.
+  dst->window.sender->nextseq = dst->window.sender->base;
+
+  // initialize receiver
+  dst->window.receiver = create_pkt_window();
+  dst->window.receiver->expect_seq = dst->window.last_seq_received + 1;
+
+  LOG_INFO("established: sender->base(%d) expect_seq(%d)", dst->window.sender->base, dst->window.receiver->expect_seq);
   return 0;
 }
 
 int fdu_listener_connect(cmu_socket_t *dst)
 {
-  
-  printf("entering listener connect\n");
-  char recv[DEFAULT_HEADER_LEN];
-  socklen_t conn_len = sizeof(dst->conn);
-  recvfrom(dst->socket, recv, DEFAULT_HEADER_LEN, 0, (struct sockaddr *)&(dst->conn), &conn_len);
-  if (!(get_flags(recv) & SYN_FLAG_MASK))
-  {
-    //not a SYN_FLAG
-    return EXIT_ERROR;
-  }
-  while (pthread_mutex_lock(&(dst->window.ack_lock)) != 0)
-    ;
-  dst->window.last_ack_received = get_ack(recv);
-  dst->window.last_seq_received = get_seq(recv);
-  pthread_mutex_unlock(&(dst->window.ack_lock));
+  LOG_DEBUG("entering listener connect");
+  dst->syn_seq = (unsigned int)(rand());
+  dst->status = STATUS_LISTEN;
 
-  uint32_t seq = (unsigned int)(rand());
-  printf("listener seq: %d\n", seq);
-  uint32_t ack = get_seq(recv) + 1;
+  // check for the first SYN handshake packet, it blocks. Upon receive, the status turns into SYN_RCVD
+  // and an SYNACK response will be made.
+  check_for_data(dst, NO_FLAG);
 
-  char *second_packet_buf;
-  second_packet_buf = create_packet_buf(dst->my_port, dst->their_port, seq, ack,
-                                        DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, SYN_FLAG_MASK | ACK_FLAG_MASK, 32, 0, NULL, NULL, 0);
+  LOG_DEBUG("seq exchanged, waiting for ack");
 
-  sendto(dst->socket, second_packet_buf, DEFAULT_HEADER_LEN, 0, (struct sockaddr *)&(dst->conn), conn_len);
-  free(second_packet_buf);
+  // check for the ACK packet for establish the connection, it also blocks. If the ACK packet misses, 
+  // the first data SYN packet will also be valid to unblock.
+  do {
+    check_for_data(dst, NO_FLAG);
+  } while (dst->status != STATUS_ESTABLISHED);
 
-  memset(&recv, 0, sizeof(recv));
-  recvfrom(dst->socket, recv, DEFAULT_HEADER_LEN, 0, (struct sockaddr *)&(dst->conn), &conn_len);
-  if (!(get_flags(recv) & ACK_FLAG_MASK))
-  {
-    //not a ACK_FLAG
-    return EXIT_ERROR;
-  }
-  while (pthread_mutex_lock(&(dst->window.ack_lock)) != 0)
-    ;
-  dst->window.last_ack_received = get_ack(recv);
-  dst->window.last_seq_received = get_seq(recv);
-  pthread_mutex_unlock(&(dst->window.ack_lock));
-  printf("listener: seq(%d) ack(%d)\n", dst->window.last_seq_received, dst->window.last_ack_received);
+  // initialize sender
+  dst->window.sender = (sender_window_t*)malloc(sizeof(sender_window_t));
+  dst->window.sender->base = dst->syn_seq + 1; // we'll start to send the first packet from here.
+  dst->window.sender->nextseq = dst->window.sender->base;
+
+  // initialize receiver
+  dst->window.receiver = create_pkt_window();
+  dst->window.receiver->expect_seq = dst->window.last_seq_received + 1;
+
+  LOG_INFO("established: sender->base(%d) expect_seq(%d)", dst->window.sender->base, dst->window.receiver->expect_seq);
   return 0;
 }
 
@@ -100,10 +113,10 @@ int fdu_listener_connect(cmu_socket_t *dst)
  */
 int cmu_socket(cmu_socket_t *dst, int flag, int port, char *serverIP)
 {
-  printf("entering socket\n");
   int sockfd, optval;
   socklen_t len;
   struct sockaddr_in conn, my_addr;
+  int error;
   len = sizeof(my_addr);
 
   sockfd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -165,7 +178,11 @@ int cmu_socket(cmu_socket_t *dst, int flag, int port, char *serverIP)
       perror("ERROR on binding");
       return EXIT_ERROR;
     }
-    fdu_initiator_connect(dst);
+    getsockname(sockfd, (struct sockaddr *)&my_addr, &len);
+    LOG_INFO("bind local socket to port %d", ntohs(my_addr.sin_port));
+    if ((error = fdu_initiator_connect(dst)) < 0) {
+      return error;
+    }
 
     break;
 
@@ -186,8 +203,9 @@ int cmu_socket(cmu_socket_t *dst, int flag, int port, char *serverIP)
     }
     dst->conn = conn;
 
-    fdu_listener_connect(dst);
-    printf("exit listener connect\n");
+    if ((error = fdu_listener_connect(dst)) < 0) {
+      return error;
+    }
     break;
 
   default:
@@ -197,9 +215,7 @@ int cmu_socket(cmu_socket_t *dst, int flag, int port, char *serverIP)
 
   getsockname(sockfd, (struct sockaddr *)&my_addr, &len);
   dst->my_port = ntohs(my_addr.sin_port);
-  printf("entering backend\n");
   pthread_create(&(dst->thread_id), NULL, begin_backend, (void *)dst);
-  printf("entered backend\n");
   return EXIT_SUCCESS;
 }
 

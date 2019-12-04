@@ -8,8 +8,7 @@
  *  the sockets will be used.
  *
  */
-void functionality(cmu_socket_t  * sock){
-    return;
+void functionality(cmu_socket_t * sock){
     char buf[9898];
     FILE *fp;
     int n;
@@ -21,12 +20,12 @@ void functionality(cmu_socket_t  * sock){
     cmu_read(sock, buf, 200, NO_FLAG);
     cmu_write(sock, "hi there", 9);
 
+    while(1);
     sleep(5);
     n = cmu_read(sock, buf, 9898, NO_FLAG);
     printf("N: %d\n", n);
     fp = fopen("./test/file.c", "w+");
     fwrite(buf, 1, n, fp);
-
 }
 
 
@@ -59,17 +58,13 @@ int main(int argc, char **argv) {
 
 
     if(cmu_socket(&socket, TCP_LISTENER, portno, serverip) < 0) {
-        printf("Socket initialize error, bad return code\n");
-        while(1);
+        LOG_ERROR("socket initialize error, bad return code");
         exit(EXIT_FAILURE);
     }
-    printf("Socket initialize success!\n");
-    return EXIT_SUCCESS;
-    
 
     functionality(&socket);
 
-    // if(cmu_close(&socket) < 0)
-    //     exit(EXIT_FAILURE);
+    if(cmu_close(&socket) < 0)
+        exit(EXIT_FAILURE);
     return EXIT_SUCCESS;
 }

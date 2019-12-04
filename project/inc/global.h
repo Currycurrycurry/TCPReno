@@ -99,6 +99,17 @@ typedef struct{
     uint16_t disconnect_time;
 } connection_t;
 
+#define STATUS_CLOSED 0
+#define STATUS_SYN_SENT 1
+#define STATUS_ESTABLISHED 2
+#define STATUS_FIN_WAIT_1 3
+#define STATUS_FIN_WAIT_2 4
+#define STATUS_TIME_WAIT 5
+#define STATUS_LISTEN 6
+#define STATUS_SYN_RCVD 7
+#define STATUS_CLOSE_WAIT 8
+#define STATUS_LAST_ACK 9
+
 typedef struct {
 	int socket;
 	pthread_t thread_id;
@@ -118,6 +129,8 @@ typedef struct {
 	window_t window;
 	cmu_timer_t* timer; // no use
 	connection_t connection;
+	int status;
+	int syn_seq;
 } cmu_socket_t;
 
 typedef struct {

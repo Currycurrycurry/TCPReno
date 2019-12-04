@@ -28,6 +28,8 @@ void functionality(cmu_socket_t  * sock){
     read = cmu_read(sock, buf, 200, NO_WAIT);
     printf("Read: %d\n", read);
 
+    while(1);
+
     fp = fopen("./src/cmu_tcp.c", "rb");
     read = 1;
     while(read > 0 ){
@@ -35,7 +37,6 @@ void functionality(cmu_socket_t  * sock){
         if(read > 0)
             cmu_write(sock, buf, read);
     }
-    
 }
 
 /*
@@ -68,17 +69,10 @@ int main(int argc, char **argv) {
 
 
     if(cmu_socket(&socket, TCP_INITATOR, portno, serverip) < 0) {
-        // printf("Socket initialize error, bad return code\n");
-        // while(1);
+        printf("socket initialize error, bad return code\n");
         exit(EXIT_FAILURE);
     }
-    // fflush(stdout);
-    // printf("Socket initialize success\n");
-    // fflush(stdout);
-    // while(1);
-    return EXIT_SUCCESS;
-    
-    
+
     functionality(&socket);
 
     if(cmu_close(&socket) < 0)

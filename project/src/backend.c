@@ -52,31 +52,76 @@ int check_ack(cmu_socket_t * sock, uint32_t seq){
 void handle_message(cmu_socket_t * sock, char* pkt){
   char* rsp;
   uint8_t flags = get_flags(pkt);
-  uint32_t data_len, seq, ack;
-  uint32_t rsp_ack  = sock->window.last_seq_received;
-  socklen_t conn_len = sizeof(sock->conn);
+  uint32_t data_len, seq, ack, rsp_ack;
+  socklen_t conn_len;
 
   rcv_pkt_t* wnd_pkt;
   rcv_window_t* rcv_wnd = sock->window.receiver;
 
+  conn_len = sizeof(sock->conn);
+  data_len = get_plen(pkt) - DEFAULT_HEADER_LEN;
 
+  seq = get_seq(pkt);
+  ack = get_ack(pkt);
+
+  LOG_INFO("[%c]SYN [%c]ACK [%d]data_len [%d]seq [%d]ack", 
+  " Y"[(flags & SYN_FLAG_MASK) != 0], " Y"[(flags & ACK_FLAG_MASK) != 0], data_len,
+  seq, ack);
+
+  /*
+  READTHIS:
+
+  To clarify, for any packet the TCP socket sends, if it is
+  * A pure ACK_FLAG_MASK packet, often sent as a response that carries no data.
+    The sent seq number does not matter and should be ignored by the receiver,
+    and the ack number is the next byte the sender is waiting for.
+  * A pure SYN_FLAG_MASK packet, it is assumed to be carrying 1 byte of data, even though the payload
+    must be blank. Therefore the receiver should pretend it's carrying 1 byte data, and send back a
+    packet with ack number seq + 1. SYN_FLAG_MASK is only used for connection management.
+  * A SYN_FLAG_MASK | ACK_FLAG_MASK packet. This kind of packet should only be used in handshake, where the
+    sender is acknowledging the recieved SYN_FLAG_MASK and at the same time telling the other side its own
+    seq number.
+
+  */
   switch(flags) {
+    case ACK_FLAG_MASK | SYN_FLAG_MASK:
+      LOG_DEBUG("recive SYNACK packet");
+      if (ack == sock->syn_seq + 1) {
+        sock->window.last_seq_received = seq;
+        sock->window.last_ack_received = ack;
+        sock->status = STATUS_ESTABLISHED;
+      }
+      break;
+    case SYN_FLAG_MASK:
+      LOG_DEBUG("receive SYN packet");
+      assert(data_len == 0);
+      if (sock->status == STATUS_LISTEN || sock->status == STATUS_SYN_RCVD) {
+        seq = get_seq(pkt);
+        // create a SNYACK response
+        rsp = create_packet_buf(sock->my_port, ntohs(sock->conn.sin_port), sock->syn_seq, seq + 1,
+        DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, SYN_FLAG_MASK | ACK_FLAG_MASK, 1, 0, NULL, NULL, 0);
+        // note that the following send might also get lost, in this case, we still make the status
+        // SYN_RCVD. In the future when the initiator retries, we want to still be able to send a
+        // SYNACK response.
+        sendto(sock->socket, rsp, DEFAULT_HEADER_LEN, 0, (struct sockaddr*)&(sock->conn), conn_len);
+        sock->status = STATUS_SYN_RCVD;
+        sock->window.last_seq_received = seq;
+      }
+      break;
     case ACK_FLAG_MASK:
+      LOG_DEBUG("receive ACK packet");
       // no matter what ack number we have received, we won't let it go
       while(pthread_mutex_lock(&(sock->window.ack_lock)) != 0);
-      ack = sock->window.last_ack_received = get_ack(pkt);
+      sock->window.last_ack_received = ack;
       pthread_mutex_unlock(&(sock->window.ack_lock));
-      // window_mark_receive(sock->window.send_wnd, ack);
-      rcv_wnd_cumulative_ack(sock->window.sender,ack);
-      // if(get_ack(pkt) > sock->window.last_ack_received)
-      //   sock->window.last_ack_received = get_ack(pkt);
+      if (sock->status == STATUS_SYN_RCVD) {
+        if (ack == sock->syn_seq + 1) {
+          sock->status = STATUS_ESTABLISHED;
+        }
+      } else {
+        rcv_wnd_cumulative_ack(sock->window.sender, ack);
+      }
       break;
-
-    // // the following case handles SYNACK packets, not sure if we want to handle it
-    // case ACK_FLAG_MASK | SYN_FLAG_MASK:
-    //   sock->window.last_ack_received = get_ack(pkt);
-    //   sock->window.last_seq_received = get_seq(pkt);
-
     case FIN_FLAG_MASK:
       //send ACK when recieve FIN
           rsp_ack = get_seq(pkt) + 1;
@@ -101,44 +146,44 @@ void handle_message(cmu_socket_t * sock, char* pkt){
           break;
     
     default:
-      seq = get_seq(pkt);
-     
-
-  
-      // TODO: for the rcv_wnd 
-      if (window_empty(rcv_wnd) || (seq > window_front_pkt(rcv_wnd)->seq)) {
-        wnd_pkt = (rcv_pkt_t*)malloc(sizeof(rcv_pkt_t));
-        data_len = get_plen(pkt) - DEFAULT_HEADER_LEN;
-        wnd_pkt->len = data_len;
-        wnd_pkt->payload = malloc(data_len);
-        wnd_pkt->seq = seq;
-        memcpy(wnd_pkt->payload, pkt + DEFAULT_HEADER_LEN, wnd_pkt->len);
-        window_recv_pkt(sock->window.receiver, wnd_pkt);
-        while (!window_empty(rcv_wnd) && rcv_wnd->queue[window_inc(rcv_wnd->front)]->seq == rsp_ack) {
-          wnd_pkt = window_pop_pkt(rcv_wnd);
-          if (sock->received_buf == NULL) {
-            sock->received_buf = malloc(data_len);
-          } else {
-            sock->received_buf = realloc(sock->received_buf, sock->received_len + data_len);
+      LOG_DEBUG("receive payload packet");
+      if (sock->status == STATUS_SYN_RCVD) {
+        // we are not ready yet, so we pick and check the ack number and discard the payload which
+        // will in the future retransmit.
+          if (ack == sock->syn_seq + 1) {
+            sock->status = STATUS_ESTABLISHED;
           }
-          memcpy(sock->received_buf + sock->received_len, wnd_pkt->payload, data_len);
-          sock->received_len += data_len;
-          rsp_ack += data_len;
-          pkt_free(wnd_pkt);
-          wnd_pkt = NULL;
+        } else {
+        // a data packet is received.
+        // TODO: for the rcv_wnd/
+          if (window_empty(rcv_wnd) || (seq > window_front_pkt(rcv_wnd)->seq)) {
+            wnd_pkt = (rcv_pkt_t*)malloc(sizeof(rcv_pkt_t));
+            wnd_pkt->len = data_len;
+            wnd_pkt->payload = malloc(data_len);
+            wnd_pkt->seq = seq;
+            memcpy(wnd_pkt->payload, pkt + DEFAULT_HEADER_LEN, wnd_pkt->len);
+            
+            window_recv_pkt(sock->window.receiver, wnd_pkt);
+            while (!window_empty(rcv_wnd) && rcv_wnd->queue[window_inc(rcv_wnd->front)]->seq == sock->window.receiver->expect_seq) {
+              wnd_pkt = window_pop_pkt(rcv_wnd);
+              if (sock->received_buf == NULL) {
+                sock->received_buf = malloc(data_len);
+              } else {
+                sock->received_buf = realloc(sock->received_buf, sock->received_len + data_len);
+              }
+              memcpy(sock->received_buf + sock->received_len, wnd_pkt->payload, data_len);
+              sock->received_len += data_len;
+              sock->window.receiver->expect_seq += data_len;
+              pkt_free(wnd_pkt);
+              wnd_pkt = NULL;
+            }
+          }
+          ack = min(sock->window.receiver->expect_seq, seq + data_len);
+          rsp = create_packet_buf(sock->my_port, ntohs(sock->conn.sin_port), 0, ack,
+            DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, ACK_FLAG_MASK, 1, 0, NULL, NULL, 0);
+          sendto(sock->socket, rsp, DEFAULT_HEADER_LEN, 0, (struct sockaddr*)&(sock->conn), conn_len);
+          free(rsp);
         }
-      }
-       ack = seq+data_len;
-       // TODO: the respond seq number should be the initial seq number
-      rsp = create_packet_buf(sock->my_port, ntohs(sock->conn.sin_port), seq, min(rsp_ack,ack),
-        DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, ACK_FLAG_MASK, 1, 0, NULL, NULL, 0);
-      sendto(sock->socket, rsp, DEFAULT_HEADER_LEN, 0, (struct sockaddr*) 
-        &(sock->conn), conn_len);
-      free(rsp);
-
-
-
-      break;
   }
 }
 
@@ -167,22 +212,21 @@ void check_for_data(cmu_socket_t * sock, int flags){
     case NO_FLAG:
       len = recvfrom(sock->socket, hdr, DEFAULT_HEADER_LEN, MSG_PEEK,
                 (struct sockaddr *) &(sock->conn), &conn_len);
+      LOG_INFO("unblocked");
       break;
     case TIMEOUT:
       FD_ZERO(&ackFD);
       FD_SET(sock->socket, &ackFD);
-      if(select(sock->socket+1, &ackFD, NULL, NULL, &time_out) <= 0){
+      if(select(sock->socket+1, &ackFD, NULL, NULL, &time_out) <= 0) {
         break;
       }
+      LOG_DEBUG("timeout");
     case NO_WAIT:
       len = recvfrom(sock->socket, hdr, DEFAULT_HEADER_LEN, MSG_DONTWAIT | MSG_PEEK,
                (struct sockaddr *) &(sock->conn), &conn_len);
       break;
     default:
       perror("ERROR unknown flag");
-
-
-
   }
   if(len >= DEFAULT_HEADER_LEN){
     plen = get_plen(hdr);
@@ -192,6 +236,7 @@ void check_for_data(cmu_socket_t * sock, int flags){
           NO_FLAG, (struct sockaddr *) &(sock->conn), &conn_len);
       buf_size = buf_size + n;
     }
+    LOG_INFO("received len %ld, plen %d", len, plen);
     handle_message(sock, pkt);
     free(pkt);
   }
@@ -360,8 +405,8 @@ void single_send(cmu_socket_t * sock, char* data, int buf_len){
     int sockfd, plen;
     size_t conn_len = sizeof(sock->conn);
     uint32_t initial_seq;
-    sender_window_t* wnd;;
-    wnd = sock->window.sender = (sender_window_t*)malloc(sizeof(sender_window_t));
+    sender_window_t* wnd;
+    wnd = sock->window.sender;
     
     // used for tracking the sent packages
     //initialize the sender window
@@ -408,13 +453,14 @@ void single_send(cmu_socket_t * sock, char* data, int buf_len){
         check_for_data(sock, NO_WAIT);
 
         // timeout retransmit || 3 ack retransmit : (a little revision)
-        if(timeout(wnd->send_time) || wnd->ack_cnt==3){
+        if(timeout(wnd->send_time) || wnd->ack_cnt==3) {
           wnd->ack_cnt = 0;
           plen = DEFAULT_HEADER_LEN + MAX_DLEN;//?
           msg = create_packet_buf(sock->my_port, sock->their_port, wnd->base, sock->window.last_seq_received, 
-      DEFAULT_HEADER_LEN, plen, NO_FLAG, 1, 0, NULL, data + wnd->base - initial_seq, MAX_DLEN);
+            DEFAULT_HEADER_LEN, plen, NO_FLAG, 1, 0, NULL, data + wnd->base - initial_seq, MAX_DLEN);
           sendto(sockfd, msg, plen, 0, (struct sockaddr*) &(sock->conn), conn_len);
         }
+        sleep(1);
       }
     }
 }
@@ -463,6 +509,7 @@ void tcp_xmit_timer(cmu_tcpcb* tp,struct timeval* sent_time){
  *
  */
 void* begin_backend(void * in){
+  LOG_INFO("begin backend");
   cmu_socket_t * dst = (cmu_socket_t *) in;
   int death, buf_len, send_signal;
   char* data;
@@ -479,6 +526,7 @@ void* begin_backend(void * in){
       break;
 
     if(buf_len > 0){
+      LOG_INFO("send buffer %d", buf_len);
       data = malloc(buf_len);
       memcpy(data, dst->sending_buf, buf_len);
       dst->sending_len = 0;
@@ -503,6 +551,7 @@ void* begin_backend(void * in){
     if(send_signal){
       pthread_cond_signal(&(dst->wait_cond));  
     }
+    sleep(1);
   }
 
 
