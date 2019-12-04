@@ -25,6 +25,11 @@ int cmu_close(cmu_socket_t * sock);
 int cmu_read(cmu_socket_t * sock, char* dst, int length, int flags);
 int cmu_write(cmu_socket_t * sock, char* src, int length);
 
+int wait_ACK_time_out(cmu_socket_t * sock, uint32_t expect_ack, uint32_t expect_seq);
+int wait_FIN_no_wait(cmu_socket_t * sock);
+int initator_wait_any_packet_no_wait(cmu_socket_t * sock);
+void fdu_initator_disconnect(cmu_socket_t * dst);
+void fdu_listener_disconnect(cmu_socket_t * sock);
 
 /*
  * You can add functions below this

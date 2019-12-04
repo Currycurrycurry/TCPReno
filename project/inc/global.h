@@ -17,12 +17,17 @@
 #define TRUE 1
 #define FALSE 0
 
+#define CONNECT_TIME_OUT 3000
 
 #define TCP_RTT_SHIFT 3
 #define TCP_RTTVAR_SHIFT 2
 #define TCP_RTOMIN 1 //1 microsecond
 #define TCP_RTOMAX 20000000  //20 seconds
 #define TCP_DEVIATION_SHIFT 2 //4*dev
+
+#define PKT_DEBUG 1
+#define ACK_DEBUG 2
+#define PROCESS_DEBUG 3
 
 #define MAX_WND_SIZE 32
 typedef struct {

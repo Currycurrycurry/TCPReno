@@ -177,6 +177,41 @@ int cmu_socket(cmu_socket_t * dst, int flag, int port, char * serverIP){
   return EXIT_SUCCESS;
 }
 
+/**
+ *  当没有数据需要发送时，并且重发已经完成时结束backend线程
+ *
+ */
+void close_backend(cmu_socket_t * dst) {
+  int buf_len;
+  //unchecked_pkt_num;
+  while(TRUE) {
+    //while(pthread_mutex_lock(&(dst->send_window_lock)) != 0);
+    //unchecked_pkt_num = dst->window.send_wnd->next - dst->window.send_wnd->front; //没有确认的数据包数量
+    while(pthread_mutex_lock(&(dst->send_lock)) != 0);
+    buf_len = dst->sending_len; //没有发送的缓存的长度
+    if(buf_len == 0){
+      pthread_mutex_unlock(&(dst->send_lock));
+      //pthread_mutex_unlock(&(dst->send_window_lock));
+      break;
+    }
+    pthread_mutex_unlock(&(dst->send_lock));
+    //pthread_mutex_unlock(&(dst->send_window_lock));
+  }
+
+  while(pthread_mutex_lock(&(dst->death_lock)) != 0);
+  dst->dying = TRUE;
+  pthread_mutex_unlock(&(dst->death_lock));
+  //begin_backend(dst);
+  pthread_exit(NULL);
+#ifdef PKT_DEBUG
+    fprintf(stdout,"After the initator send the last ack, he recv a packet which means the last ack is lost. He would send last ack again.\n");
+#endif
+  // terminator another thread
+  pthread_join(dst->thread_id, NULL);
+
+}
+
+
 /*
  * Param: sock - The socket to close.
  *
@@ -186,11 +221,13 @@ int cmu_socket(cmu_socket_t * dst, int flag, int port, char * serverIP){
  *
  */
 int cmu_close(cmu_socket_t * sock){
-  while(pthread_mutex_lock(&(sock->death_lock)) != 0);
-  sock->dying = TRUE;
-  pthread_mutex_unlock(&(sock->death_lock));
 
-  pthread_join(sock->thread_id, NULL); 
+  close_backend(sock);
+
+  if(sock->type == TCP_INITATOR)
+    fdu_initator_disconnect(sock);
+  else
+    fdu_listener_disconnect(sock);
 
   if(sock != NULL){
     if(sock->received_buf != NULL)
@@ -287,5 +324,227 @@ int cmu_write(cmu_socket_t * sock, char* src, int length){
 
   pthread_mutex_unlock(&(sock->send_lock));
   return EXIT_SUCCESS;
+}
+
+/*
+ * wait for ACK for a time_out and check it
+ */
+int wait_ACK_time_out(cmu_socket_t * sock, uint32_t expect_ack, uint32_t expect_seq){
+  fd_set fdu_ack;
+  ssize_t lenght = 0;
+  struct timeval time_out;
+  char hdr[DEFAULT_HEADER_LEN];
+  char *pkt;
+  uint32_t pktlen = 0;
+  uint32_t buf_size = 0;
+  uint32_t n = 0;
+  socklen_t conn_len = sizeof(sock->conn);
+  time_out.tv_sec = CONNECT_TIME_OUT / 1000;
+  time_out.tv_usec = (CONNECT_TIME_OUT % 1000) * 1000;
+
+  FD_ZERO(&fdu_ack);
+  FD_SET(sock->socket, &fdu_ack);
+
+  //loss the data or error
+  if(select(sock->socket+1, &fdu_ack, NULL, NULL, &time_out) <= 0){
+    return -1;
+  }
+  lenght = recvfrom(sock->socket, hdr, DEFAULT_HEADER_LEN, MSG_DONTWAIT | MSG_PEEK,
+                 (struct sockaddr *) &(sock->conn), &conn_len);
+
+  if(lenght >= DEFAULT_HEADER_LEN){
+    //the length of pkt, contains the header
+    pktlen = get_plen(hdr);
+    pkt = malloc(pktlen);
+    //read the whole packet
+    while(buf_size < pktlen){
+      n = recvfrom(sock->socket, pkt + buf_size, pktlen - buf_size,
+                   NO_FLAG, (struct sockaddr *) &(sock->conn), &conn_len);
+      //read the ip and port of the other
+      buf_size = buf_size + n;
+    }
+    //read and remove it to make sure no dumplication in the pipe
+    free(pkt);
+    if(get_flags(hdr) == ACK_FLAG_MASK && (expect_ack == 0 || get_ack(hdr) == expect_ack) && (expect_seq == 0 || get_seq(hdr) == expect_seq) ){
+#ifdef ACK_DEBUG
+      fprintf(stdout,"recv ACK packet with ack %d and seq %d.\n", get_ack(hdr), get_seq(hdr));
+#endif
+      return 1;
+    }
+    // recieve the FIN pkt
+    if(get_flags(hdr) == FIN_FLAG_MASK){
+#ifdef PKT_DEBUG
+      fprintf(stdout,"recv FIN packet with ack %d and seq there===========%d.\n", get_ack(hdr), get_seq(hdr));
+#endif
+      // response with ack right now
+      send_ACK(sock, sock->window.send_wnd->next, get_seq(hdr) + 1);
+    }
+  }
+  return -1;
+}
+
+/*
+ * wait for the FIN pkt from the server without block
+ */
+int wait_FIN_no_wait(cmu_socket_t * sock){
+  ssize_t lenght = 0;
+  char hdr[DEFAULT_HEADER_LEN];
+  char *pkt;
+  uint32_t plen = 0;
+  uint32_t buf_size = 0;
+  uint32_t n = 0;
+  socklen_t conn_len = sizeof(sock->conn);
+
+  lenght = recvfrom(sock->socket, hdr, DEFAULT_HEADER_LEN, MSG_DONTWAIT | MSG_PEEK,
+                 (struct sockaddr *) &(sock->conn), &conn_len);
+
+  if(lenght >= DEFAULT_HEADER_LEN){
+    plen = get_plen(hdr);
+    pkt = malloc(plen);
+    while(buf_size < plen){
+      n = recvfrom(sock->socket, pkt + buf_size, plen - buf_size,
+                   NO_FLAG, (struct sockaddr *) &(sock->conn), &conn_len);
+      buf_size = buf_size + n;
+    }
+    free(pkt);
+    if(get_flags(hdr) == FIN_FLAG_MASK){
+#ifdef PKT_DEBUG
+      fprintf(stdout,"recv FIN packet with ack %d and seq %d.\n", get_ack(hdr), get_seq(hdr));
+#endif
+      sock->window.recv_wnd->next = get_seq(hdr) + 1;
+      return 1;
+    }
+  }
+  return -1;
+}
+/*
+ * wait for any pkt from the server without block
+ */
+int initator_wait_any_packet_no_wait(cmu_socket_t * sock){
+  ssize_t len = 0;
+  char hdr[DEFAULT_HEADER_LEN];
+  char *pkt;
+  uint32_t plen = 0;
+  uint32_t buf_size = 0;
+  uint32_t n = 0;
+  socklen_t conn_len = sizeof(sock->conn);
+
+  len = recvfrom(sock->socket, hdr, DEFAULT_HEADER_LEN, MSG_DONTWAIT | MSG_PEEK,
+                 (struct sockaddr *) &(sock->conn), &conn_len);
+
+  if(len >= DEFAULT_HEADER_LEN){
+    plen = get_plen(hdr);
+    pkt = malloc(plen);
+    while(buf_size < plen){
+      n = recvfrom(sock->socket, pkt + buf_size, plen - buf_size,
+                   NO_FLAG, (struct sockaddr *) &(sock->conn), &conn_len);
+      buf_size = buf_size + n;
+    }
+    free(pkt);
+#ifdef PKT_DEBUG
+    fprintf(stdout,"After the initator send the last ack, he recv a packet which means the last ack is lost. He would send last ack again.\n");
+#endif
+    sock->window.recv_wnd->next = get_seq(hdr) + 1;
+    return 1;
+  }
+  return -1;
+}
+
+/*
+ * disconnect from the initator like client
+ */
+void fdu_initator_disconnect(cmu_socket_t * dst){
+  size_t conn_len = sizeof(dst->conn);
+  char *rsp;
+
+#ifdef PROCESS_DEBUG
+  fprintf(stdout,"The child thread of the client is over.\n");
+#endif
+
+  //cyclely send a FIN pkt to server for a disconnection, and wait for an ACK, if recieved then jump out
+  while(TRUE){
+    rsp = create_packet_buf(dst->my_port, ntohs(dst->conn.sin_port), dst->window.send_wnd->next, dst->window.recv_wnd->next,
+                            DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, FIN_FLAG_MASK, 1, 0, NULL, NULL, 0);
+#ifdef PKT_DEBUG
+    fprintf(stdout,"send FIN packet with ack %d and seq %d.\n", dst->window.recv_wnd->next, dst->window.send_wnd->next);
+#endif
+    sendto(dst->socket, rsp, DEFAULT_HEADER_LEN, 0, (struct sockaddr*) &(dst->conn), conn_len);
+
+    if(wait_ACK_time_out(dst,dst->window.send_wnd->next + 1,0) > 0) {
+      //dst->connection.disconnect = FIN_WAIT_2;
+      break;
+    }
+  }
+  free(rsp);
+  while(TRUE){
+    //wait for FIN pkt without wait , if recieve then jump out
+    if(wait_FIN_no_wait(dst) > 0) {
+      send_ACK(dst, dst->window.send_wnd->next, dst->window.recv_wnd->next);
+      //dst->connection.disconnect == TIME_WAIT;
+      break;
+    }
+  }
+
+#ifdef PROCESS_DEBUG
+  fprintf(stdout,"Now the initator has sent the last ack and wait %d ms to disconnect.\n",3000);
+#endif
+
+  struct timeval current;
+  struct timeval timer;
+  gettimeofday(&timer, NULL);
+  // at the moment it is TIME_WAIT ,cyclely check whether time_out and check whether recieve pkt, if recieve the answer ACK and restart the timer
+  while(TRUE) {
+    gettimeofday(&current, NULL); 
+    //whether time out
+    if(current.tv_sec - timer.tv_sec > 3000 / 1000) {
+      break;
+    }
+    //if recieve pkt , then it means last ack loss
+    if(initator_wait_any_packet_no_wait(dst) > 0){
+      // answer ack if recieve anything
+      send_ACK(dst, dst->window.send_wnd->next, dst->window.recv_wnd->next);
+#ifdef PROCESS_DEBUG
+      fprintf(stdout,"Now the initator has sent the last ack and wait %d ms to disconnect.\n",3000);
+#endif
+      //restart the timer
+      gettimeofday(&timer, NULL);
+    }
+  }
+#ifdef PROCESS_DEBUG
+  fprintf(stdout,"Now the initator begins to disconnect.\n",3000);
+#endif
+}
+
+void fdu_listener_disconnect(cmu_socket_t * sock){
+  size_t conn_len = sizeof(sock->conn);
+#ifdef PROCESS_DEBUG
+  fprintf(stdout,"The child thread of the server is over.\n");
+#endif
+  char* rsp;
+
+    while(TRUE) {
+      if(wait_FIN_no_wait(sock) > 0){
+        //sock->connection.disconnect == CLOSE_WAIT;
+        send_ACK(sock,(sock->window).send_wnd->next, (sock->window).recv_wnd->next);
+        break;
+      }
+    }
+
+  rsp = create_packet_buf(sock->my_port, ntohs(sock->conn.sin_port), sock->window.send_wnd->next, sock->window.recv_wnd->next,
+                          DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, FIN_FLAG_MASK, 1, 0, NULL, NULL, 0);
+
+  //sock->connection.disconnect = LAST_ACK;
+
+  while(TRUE){
+#ifdef PKT_DEBUG
+    fprintf(stdout,"send FIN packet with ack %d and seq %d.\n", sock->window.recv_wnd->next, sock->window.send_wnd->next);
+#endif
+    sendto(sock->socket, rsp, DEFAULT_HEADER_LEN, 0, (struct sockaddr*) &(sock->conn), conn_len);
+    if(wait_ACK_time_out(sock,sock->window.send_wnd->next + 1,0) > 0) {
+      //sock->connection.disconnect == CLOSED;
+      break;
+    }
+  }
+  free(rsp);
 }
 

@@ -34,7 +34,7 @@ void functionality(cmu_socket_t  * sock){
         if(read > 0)
             cmu_write(sock, buf, read);
     }
-    
+
 }
 
 /*

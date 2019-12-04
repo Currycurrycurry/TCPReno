@@ -36,6 +36,19 @@ void handle_message(cmu_socket_t * sock, char* pkt){
   pkt_window_t* wnd;
   pkt_t* wnd_pkt;
   switch(flags) {
+
+    case FIN_FLAG_MASK:
+#ifdef PKT_DEBUG
+      fprintf(stdout,"recv a FIN packet with ack %d and seq %d.\n", get_ack(pkt), get_seq(pkt));
+#endif
+      //while(pthread_mutex_lock(&(sock->recv_window_lock)) != 0);
+          //sock->recv_window->state = RECEIVER_FIN; // 这个会结束当前通信段的read阻塞
+          //pthread_mutex_unlock(&(sock->recv_window_lock));
+          ack = get_seq(pkt) + 1;
+          seq = get_ack(pkt);
+          send_ACK(sock, seq, ack);
+          break;
+
     case ACK_FLAG_MASK:
       // no matter what ack number we have received, we won't let it go
       // TODO: do we need the lock bellow?
@@ -47,16 +60,16 @@ void handle_message(cmu_socket_t * sock, char* pkt){
       //   sock->window.last_ack_received = get_ack(pkt);
       break;
 
-    // // the following case handles SYNACK packets, not sure if we want to handle it
-    // case ACK_FLAG_MASK | SYN_FLAG_MASK:
-    //   sock->window.last_ack_received = get_ack(pkt);
-    //   sock->window.last_seq_received = get_seq(pkt);
+     // the following case handles SYNACK packets, not sure if we want to handle it
+     case ACK_FLAG_MASK | SYN_FLAG_MASK:
+       sock->window.last_ack_received = get_ack(pkt);
+       sock->window.last_seq_received = get_seq(pkt);
     default:
       seq = get_seq(pkt);
       // TODO: the respond seq number should be the initial seq number
       rsp = create_packet_buf(sock->my_port, ntohs(sock->conn.sin_port), seq, seq + get_plen(pkt) - DEFAULT_HEADER_LEN,
         DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, ACK_FLAG_MASK, 1, 0, NULL, NULL, 0);
-      sendto(sock->socket, rsp, DEFAULT_HEADER_LEN, 0, (struct sockaddr*) 
+      sendto(sock->socket, rsp, DEFAULT_HEADER_LEN, 0, (struct sockaddr*)
         &(sock->conn), conn_len);
       free(rsp);
 
@@ -139,6 +152,21 @@ void check_for_data(cmu_socket_t * sock, int flags){
   }
   pthread_mutex_unlock(&(sock->recv_lock));
 }
+
+void send_ACK(cmu_socket_t * sock, int seq, int ack) {
+#ifdef ACK_DEBUG
+  fprintf(stdout,"send ACK packet with ack %d and seq %d.\n", ack, seq);
+#endif
+  seq = (uint32_t)(seq);
+  ack = (uint32_t)(ack);
+  socklen_t conn_len = sizeof(sock->conn);
+  uint16_t adv_window = (MAX_NETWORK_BUFFER - sock->received_len) / MAX_DLEN;
+  char* rsp = create_packet_buf(sock->my_port, ntohs(sock->conn.sin_port), seq, ack,
+                                DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, ACK_FLAG_MASK, adv_window, 0, NULL, NULL, 0);
+  sendto(sock->socket, rsp, DEFAULT_HEADER_LEN, 0, (struct sockaddr*)&(sock->conn), conn_len);
+  free(rsp);
+}
+
 
 pkt_window_t* create_pkt_window() {
   pkt_window_t* wnd = (pkt_window_t*)malloc(sizeof(pkt_window_t));
@@ -391,6 +419,9 @@ void* begin_backend(void * in){
   char* data;
 
   while (TRUE) {
+//#ifdef PKT_DEBUG
+//      fprintf(stdout,"bbb.\n");
+//#endif
     while (pthread_mutex_lock(&(dst->death_lock)) !=  0);
     death = dst->dying;
     pthread_mutex_unlock(&(dst->death_lock));
@@ -408,7 +439,7 @@ void* begin_backend(void * in){
       free(dst->sending_buf);
       dst->sending_buf = NULL;
       pthread_mutex_unlock(&(dst->send_lock));
-      single_send(dst, data, buf_len);
+      //single_send(dst, data, buf_len);
       free(data);
     }
     else
