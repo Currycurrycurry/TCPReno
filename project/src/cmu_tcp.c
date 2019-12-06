@@ -494,7 +494,7 @@ void fdu_initator_disconnect(cmu_socket_t * dst){
   gettimeofday(&timer, NULL);
   // at the moment it is TIME_WAIT ,cyclely check whether time_out and check whether recieve pkt, if recieve the answer ACK and restart the timer
   while(TRUE) {
-    gettimeofday(&current, NULL); 
+    gettimeofday(&current, NULL);
     //whether time out
     if(current.tv_sec - timer.tv_sec > 3000 / 1000) {
       break;
