@@ -14,17 +14,20 @@ void functionality(cmu_socket_t *sock) {
   FILE *fp;
 
   cmu_write(sock, "hi there", 9);
-  sleep(1);
+  sleep(3);
   n = cmu_read(sock, buf, 200, NO_FLAG);
   printf("R: %s\n", buf);
   printf("N: %d\n", n);
 
   fp = fopen("./src/cmu_tcp.c", "rb");
+  n = 0;
   read = 1;
   while (read > 0) {
-    read = fread(buf, 1, 2000, fp);
+    read = fread(buf, 1, 9898, fp);
     if (read > 0) cmu_write(sock, buf, read);
+    n += read;
   }
+  LOG_DEBUG("client send %d bytes", n);
 }
 
 /*
@@ -63,7 +66,8 @@ int main(int argc, char **argv) {
     exit(EXIT_FAILURE);
   }
 
-//   functionality(&socket);
+  functionality(&socket);
+  while(1);
 
   if (cmu_close(&socket) < 0) exit(EXIT_FAILURE);
   return EXIT_SUCCESS;

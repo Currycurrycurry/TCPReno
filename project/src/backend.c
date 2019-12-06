@@ -54,8 +54,9 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
   uint32_t data_len, seq, ack, rsp_ack;
   socklen_t conn_len;
 
-  rcv_pkt_t *wnd_pkt;
-  rcv_window_t *rcv_wnd = sock->window.receiver;
+  // received_payload_t *wnd_pkt;
+  receiver_window_t *rcv_wnd = sock->window.receiver;
+  sender_window_t *snd_wnd = sock->window.sender;
 
   conn_len = sizeof(sock->conn);
   data_len = get_plen(pkt) - DEFAULT_HEADER_LEN;
@@ -113,6 +114,10 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
       break;
     case ACK_FLAG_MASK:
       LOG_DEBUG("receive ACK packet");
+      if (rand() % 2 != 0) {
+        LOG_DEBUG("DROP");
+        break;
+      }
       // no matter what ack number we have received, we won't let it go
       while (pthread_mutex_lock(&(sock->window.ack_lock)) != 0)
         ;
@@ -123,7 +128,16 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
           sock->status = STATUS_ESTABLISHED;
         }
       } else {
-        rcv_wnd_cumulative_ack(sock->window.sender, ack);
+        if (ack > snd_wnd->base) {
+          snd_wnd->base = ack;
+          snd_wnd->ack_cnt = 0;
+          if (snd_wnd->nextseq > snd_wnd->base) {
+            //  start_timer();
+            gettimeofday((struct timeval *)&(snd_wnd->send_time), NULL);
+          }
+        } else {
+          snd_wnd->ack_cnt++;
+        }
       }
       break;
     case FIN_FLAG_MASK:
@@ -154,6 +168,10 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
 
     default:
       LOG_DEBUG("receive payload packet");
+      if (rand() % 2 != 0) {
+        LOG_DEBUG("DROP");
+        break;
+      }
       if (sock->status == STATUS_SYN_RCVD) {
         // we are not ready yet, so we pick and check the ack number and discard
         // the payload which will in the future retransmit.
@@ -163,43 +181,51 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
       } else {
         // a data packet is received.
         // TODO: for the rcv_wnd/
-        if (seq >= rcv_wnd->expect_seq) {
-          wnd_pkt = (rcv_pkt_t *)malloc(sizeof(rcv_pkt_t));
-          wnd_pkt->len = data_len;
-          wnd_pkt->payload = malloc(data_len);
-          wnd_pkt->seq = seq;
-          memcpy(wnd_pkt->payload, pkt + DEFAULT_HEADER_LEN, wnd_pkt->len);
+        if (seq + data_len >= rcv_wnd->expect_seq) {
+          // the packet might contain unreceived data
+          int i;
+          for (i = 0; i < data_len; ++i) {
+            int pos = seq + i;
+            if (pos >= rcv_wnd->expect_seq &&
+                pos < rcv_wnd->expect_seq + MAX_WND_SIZE) {
+              rcv_wnd->marked[pos % MAX_WND_SIZE] = 1;
+              rcv_wnd->received[pos % MAX_WND_SIZE] =
+                  *(pkt + DEFAULT_HEADER_LEN + i);
+            }
+          }
 
-          window_recv_pkt(rcv_wnd, wnd_pkt);
-          while (!window_empty(rcv_wnd) &&
-                 rcv_wnd->queue[window_inc(rcv_wnd->front)]->seq ==
-                     rcv_wnd->expect_seq) {
-            wnd_pkt = window_pop_pkt(rcv_wnd);
+          for (i = 0; i < MAX_WND_SIZE; ++i) {
+            int pos = (i + rcv_wnd->expect_seq) % MAX_WND_SIZE;
+            if (rcv_wnd->marked[pos] == 0) {
+              break;
+            } else {
+              rcv_wnd->buf[i] = rcv_wnd->received[pos];
+              rcv_wnd->marked[pos] = 0;
+            }
+          }
+          if (i > 0) {
             if (sock->received_buf == NULL) {
-              sock->received_buf = malloc(data_len);
+              sock->received_buf = malloc(i);
             } else {
               sock->received_buf =
-                  realloc(sock->received_buf, sock->received_len + data_len);
+                  realloc(sock->received_buf, sock->received_len + i);
             }
-            memcpy(sock->received_buf + sock->received_len, wnd_pkt->payload,
-                   data_len);
-            sock->received_len += data_len;
-            rcv_wnd->expect_seq += data_len;
-            pkt_free(wnd_pkt);
-            wnd_pkt = NULL;
+            memcpy(sock->received_buf + sock->received_len, rcv_wnd->buf, i);
+            sock->received_len += i;
+            rcv_wnd->expect_seq += i;
           }
           ack = rcv_wnd->expect_seq;
         } else {
           ack = seq + data_len;
         }
+        rsp = create_packet_buf(sock->my_port, ntohs(sock->conn.sin_port), 0,
+                                ack, DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN,
+                                ACK_FLAG_MASK, 1, 0, NULL, NULL, 0);
+        LOG_DEBUG("send ACK [%d]ack [%d]expect_seq", ack, rcv_wnd->expect_seq);
+        sendto(sock->socket, rsp, DEFAULT_HEADER_LEN, 0,
+               (struct sockaddr *)&(sock->conn), conn_len);
+        free(rsp);
       }
-      rsp = create_packet_buf(sock->my_port, ntohs(sock->conn.sin_port), 0, ack,
-                              DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN,
-                              ACK_FLAG_MASK, 1, 0, NULL, NULL, 0);
-      LOG_DEBUG("send ACK [%d]ack [%d]expect_seq", ack, rcv_wnd->expect_seq);
-      sendto(sock->socket, rsp, DEFAULT_HEADER_LEN, 0,
-             (struct sockaddr *)&(sock->conn), conn_len);
-      free(rsp);
   }
 }
 
@@ -264,128 +290,17 @@ void check_for_data(cmu_socket_t *sock, int flags) {
   pthread_mutex_unlock(&(sock->recv_lock));
 }
 
-rcv_window_t *create_pkt_window() {
-  rcv_window_t *wnd = (rcv_window_t *)malloc(sizeof(rcv_window_t));
-  wnd->siz = 0;
-  wnd->front = MAX_WND_SIZE - 1;  // front is index before the first sent packet
-  wnd->next = 0;                  // next is the next available unsent packet
-  wnd->end = 0;  // end is the index of the last element in the queue
-  // wnd->rcvBuffer_len =
-  return wnd;
-}
-
-int window_full(rcv_window_t *wnd) { return wnd->siz == MAX_WND_SIZE; }
-
-int window_empty(rcv_window_t *wnd) { return wnd->siz == 0; }
-
-int window_push_pkt(rcv_window_t *wnd, rcv_pkt_t *pkt) {
-  if (window_full(wnd)) {
-    return -1;
+int timeout(sender_window_t *sender) {
+  struct timeval current_time;
+  gettimeofday(&current_time, NULL);
+  // TODO dynamic time interval
+  if (((current_time.tv_sec - sender->send_time.tv_sec) * 1000000L +
+       current_time.tv_usec - sender->send_time.tv_usec) >
+      sender->timeout.tv_sec * 1000000L + sender->timeout.tv_usec) {
+    return TRUE;
   }
-  wnd->queue[wnd->end] = pkt;
-  wnd->end = window_inc(wnd->end);
-  wnd->siz++;
-  return 0;
+  return FALSE;
 }
-
-rcv_pkt_t *window_pop_pkt(rcv_window_t *wnd) {
-  rcv_pkt_t *ret;
-  if (window_empty(wnd)) {
-    return NULL;
-  }
-  wnd->front = window_inc(wnd->front);
-  ret = wnd->queue[wnd->front];
-  wnd->queue[wnd->front] = NULL;
-  wnd->siz--;
-  return ret;
-}
-
-// pkt_t* window_has_unsent(pkt_window_t* wnd) {
-//   pkt_t* pkt;
-//   if (wnd->next != wnd->end) {
-//     pkt = wnd->queue[wnd->next];
-//     wnd->next = window_inc(wnd->next);
-//   } else {
-//     pkt = NULL;
-//   }
-//   return pkt;
-// }
-
-int window_inc(int v) { return (v == MAX_WND_SIZE - 1) ? 0 : v + 1; }
-
-rcv_pkt_t *window_front_pkt(rcv_window_t *wnd) {
-  if (window_empty(wnd)) {
-    return NULL;
-  }
-  return wnd->queue[window_inc(wnd->front)];
-}
-
-void pkt_free(rcv_pkt_t *pkt) {
-  free(pkt->payload);
-  free(pkt);
-}
-
-/**
- * @brief window_recv_pkt inserts one received packet into the recv_wnd of this
- * socket in the order of seq number, it discards packets out of window.
- *
- * @param wnd the wnd_recv of the socket
- * @param pkt the packet received
- */
-void window_recv_pkt(rcv_window_t *wnd, rcv_pkt_t *pkt) {
-  rcv_pkt_t *tmp;
-  for (int i = window_inc(wnd->front); i != wnd->end; i = window_inc(i)) {
-    if (wnd->queue[i]->seq > pkt->seq) {
-      do {
-        tmp = wnd->queue[i];
-        wnd->queue[i] = pkt;
-        pkt = tmp;
-        i = window_inc(i);
-      } while (i != wnd->end);
-      break;
-    }
-  }
-  if (!window_full(wnd)) {
-    window_push_pkt(wnd, pkt);
-  }
-}
-
-/**
- * window_mark_receive marks one parket has been successfully received
- */
-// void window_mark_receive(pkt_window_t* wnd, int ack) {
-//   // theoritically speaking, binary search can be applied, but for simplicity
-//   we'll just iterate through all sent packets for (int i =
-//   window_inc(wnd->front); i != wnd->next; i = window_inc(i)) {
-//     pthread_mutex_init(&wnd->queue[i]->ack_cnt_lock, NULL);
-//     while(pthread_mutex_lock(&wnd->queue[i]->ack_cnt_lock)!=0);
-//     wnd->queue[i]->ack_cnt++;
-//     pthread_mutex_unlock(&wnd->queue[i]->ack_cnt_lock);
-
-//     if (wnd->queue[i]->ack_waiting_for == ack) {
-//       break;
-//     }
-//   }
-//   while (!window_empty(wnd) && wnd->queue[window_inc(wnd->front)]->ack_cnt >
-//   0) {
-//     window_pop_pkt(wnd);
-//   }
-// }
-
-void rcv_wnd_cumulative_ack(sender_window_t *wnd, int ack) {
-  if (ack > wnd->base) {
-    wnd->base = ack;
-    wnd->ack_cnt = 0;
-    if (wnd->nextseq > wnd->base) {
-      //  start_timer();
-      gettimeofday((struct timeval *)&(wnd->send_time), NULL);
-    }
-  } else {
-    wnd->ack_cnt++;
-  }
-}
-
-#define TIMEOUT_INTERVAL 3
 
 /*
  * Param: sock - The socket to use for sending data
@@ -398,16 +313,6 @@ void rcv_wnd_cumulative_ack(sender_window_t *wnd, int ack) {
  * Comment: This will need to be updated for checkpoints 1,2,3
  *
  */
-
-int timeout(struct timeval send_time) {
-  struct timeval current_time;
-  gettimeofday(&current_time, NULL);
-  // TODO dynamic time interval
-  if (current_time.tv_sec - send_time.tv_sec > TIMEOUT_INTERVAL) {
-    return TRUE;
-  }
-  return FALSE;
-}
 void single_send(cmu_socket_t *sock, char *data, int buf_len) {
   char *msg;
   char *data_offset = data;
@@ -428,6 +333,7 @@ void single_send(cmu_socket_t *sock, char *data, int buf_len) {
   if (buf_len > 0) {
     // event loop
 
+    gettimeofday(&wnd->send_time, NULL);
     while (TRUE) {  // in pure C, we don't have boolean type
       if (buf_len > 0 && wnd->nextseq < wnd->base + MAX_WND_SIZE) {
         // we have more packets to make & send, the second branch is for flow
@@ -437,14 +343,16 @@ void single_send(cmu_socket_t *sock, char *data, int buf_len) {
           plen = DEFAULT_HEADER_LEN + buf_len;
           // TODO ack value set
           msg = create_packet_buf(sock->my_port, sock->their_port, wnd->nextseq,
-                                  sock->window.last_seq_received,
+                                  sock->window.last_seq_received +
+                                      1,  // in case the ack packet is lost, and
+                                          // handshake not finished
                                   DEFAULT_HEADER_LEN, plen, NO_FLAG, 1, 0, NULL,
                                   data_offset, buf_len);
           buf_len = 0;
         } else {
           plen = DEFAULT_HEADER_LEN + MAX_DLEN;
           msg = create_packet_buf(sock->my_port, sock->their_port, wnd->nextseq,
-                                  sock->window.last_seq_received,
+                                  sock->window.last_seq_received + 1,
                                   DEFAULT_HEADER_LEN, plen, NO_FLAG, 1, 0, NULL,
                                   data_offset, MAX_DLEN);
           buf_len -= MAX_DLEN;
@@ -462,13 +370,16 @@ void single_send(cmu_socket_t *sock, char *data, int buf_len) {
       check_for_data(sock, NO_WAIT);
 
       // timeout retransmit || 3 ack retransmit : (a little revision)
-      if (timeout(wnd->send_time) || wnd->ack_cnt == 3) {
+      if (timeout(wnd) || wnd->ack_cnt == 3) {
+        int dlen = min(MAX_DLEN, terminal_seq - wnd->base);
+        LOG_DEBUG("RESEND [%d]seq [%d]dlen", wnd->base, dlen);
         wnd->ack_cnt = 0;
-        plen = DEFAULT_HEADER_LEN + MAX_DLEN;  //?
+        gettimeofday(&wnd->send_time, NULL);
+        plen = DEFAULT_HEADER_LEN + dlen;  //?
         msg = create_packet_buf(sock->my_port, sock->their_port, wnd->base,
                                 sock->window.last_seq_received,
                                 DEFAULT_HEADER_LEN, plen, NO_FLAG, 1, 0, NULL,
-                                data + wnd->base - initial_seq, MAX_DLEN);
+                                data + wnd->base - initial_seq, dlen);
         sendto(sockfd, msg, plen, 0, (struct sockaddr *)&(sock->conn),
                conn_len);
       }
