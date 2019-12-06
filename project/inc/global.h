@@ -1,4 +1,5 @@
 #include "grading.h"
+
 #ifndef _GLOBAL_H_
 #define _GLOBAL_H_
 
@@ -17,45 +18,97 @@
 #define TRUE 1
 #define FALSE 0
 
-
 #define TCP_RTT_SHIFT 3
 #define TCP_RTTVAR_SHIFT 2
 #define TCP_RTOMIN 1 //1 microsecond
 #define TCP_RTOMAX 20000000  //20 seconds
 #define TCP_DEVIATION_SHIFT 2 //4*dev
 
-#define MAX_WND_SIZE 32
-typedef struct {
-  uint32_t buf_len;
-  uint32_t seq;
-  uint32_t ack_waiting_for;
-  uint32_t len;
-  char* msg;
-  int ack_cnt;
-  pthread_mutex_t ack_cnt_lock;
-  clock_t sent_time;
-} pkt_t;
+
+#define MAX_QUEUE_SIZE 32
+#define MAX_WND_SIZE (MAX_QUEUE_SIZE*1375)
+
+#define CONN_NO_WAIT 0
+#define FIN_WAIT_1 1
+#define FIN_WAIT_2 2
+#define LAST_ACK 3
+#define TIME_WAIT 4
+#define CLOSE_WAIT 5
+#define CLOSED 6
+#define TIMER_ON 1
 
 typedef struct {
-  pkt_t* queue[MAX_WND_SIZE];
+  	uint32_t seq;
+  	uint32_t len; // len of payload
+  	char* payload;// raw data
+} rcv_pkt_t;
+
+typedef struct {
+  rcv_pkt_t* queue[MAX_WND_SIZE];
   int siz;
   int front;
   int next;
   int end;
- } pkt_window_t;
+  uint32_t expect_seq;
+  uint32_t rwnd;// for flow control
+  uint32_t rcvBuffer_len;
+ } rcv_window_t;
 
+typedef struct{
+	uint16_t window_size;
+	uint32_t base;
+	uint32_t nextseq;
+	uint32_t estmated_rtt;
+	void** win_packet_buffer;
+	// uint16_t buffer_next;
+	int ack_cnt;
+	pthread_mutex_t ack_cnt_lock;
+	struct timeval send_time;
+} sender_window_t;
 
 typedef struct {
 	uint32_t last_seq_received;
 	uint32_t last_ack_received;
-	// the msg is the full packet with header
-	pkt_window_t* send_wnd;
-	// note that msg in recv_wnd is raw data
-	pkt_window_t* recv_wnd;
 
+	sender_window_t* sender;
+	rcv_window_t* receiver;
+
+	pthread_mutex_t sender_lock;
+	pthread_mutex_t receiver_lock;
+
+	int ack_cnt;
 	pthread_mutex_t ack_lock;
+
 } window_t;
 
+
+
+
+typedef struct{
+	struct timeval start_time;
+	struct timeval time_out;
+	uint8_t state;
+} cmu_timer_t;
+
+//????
+typedef struct{
+	uint32_t expect_seq;
+	uint32_t expect_ack;
+	uint8_t shakenhands;
+	uint8_t disconnect;
+    uint16_t disconnect_time;
+} connection_t;
+
+#define STATUS_CLOSED 0
+#define STATUS_SYN_SENT 1
+#define STATUS_ESTABLISHED 2
+#define STATUS_FIN_WAIT_1 3
+#define STATUS_FIN_WAIT_2 4
+#define STATUS_TIME_WAIT 5
+#define STATUS_LISTEN 6
+#define STATUS_SYN_RCVD 7
+#define STATUS_CLOSE_WAIT 8
+#define STATUS_LAST_ACK 9
 
 typedef struct {
 	int socket;
@@ -74,6 +127,10 @@ typedef struct {
 	int dying;
 	pthread_mutex_t death_lock;
 	window_t window;
+	cmu_timer_t* timer; // no use
+	connection_t connection;
+	int status;
+	int syn_seq;
 } cmu_socket_t;
 
 typedef struct {

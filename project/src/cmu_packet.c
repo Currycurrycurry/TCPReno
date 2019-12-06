@@ -63,11 +63,10 @@ char* set_headers(uint16_t src, uint16_t dst, uint32_t seq, uint32_t ack,
     memcpy(msg+index, &temp16, SIZE16);
     index += SIZE16;
 
-
-    if(ext > 0)
+    if (ext > 0) {
         memcpy(msg+index, ext_data, ext);
+    }
     
-
 	return msg;
 }
 

@@ -9,7 +9,7 @@ from fabric import Connection
 import time
 import socket
 
-CODE_DIR = '/vagrant/15-441-project-2'
+CODE_DIR = '/vagrant/project'
 PCAP = 'test/test.pcap'
 IFNAME = 'enp0s8'
 
@@ -121,6 +121,11 @@ def test_run_server_client():
                 TESTING_HOST_IP, TESTING_HOST_PORT, CODE_DIR)
     stop_server_cmd = 'tmux kill-session -t pytest_server'
     stop_client_cmd = 'tmux kill-session -t pytest_client'
+    print("\n")
+    print("start_server_cmd: ", start_server_cmd)
+    print("start_client_cmd: ", start_client_cmd)
+    # import ipdb
+    # ipdb.set_trace()
 
     with Connection(host=TESTING_HOST_IP, user='vagrant', connect_kwargs={'password':'vagrant'}) as conn:
         try:
@@ -130,6 +135,7 @@ def test_run_server_client():
             conn.run('tmux has-session -t pytest_server')
             # exit when server finished receiving file
             conn.run('while tmux has-session -t pytest_server; do sleep 1; done')
+            print("session ending")
         finally:
             try:
                 conn.local('tmux has-session -t pytest_client')
@@ -140,7 +146,8 @@ def test_run_server_client():
                 conn.run('tmux has-session -t pytest_server')
                 conn.run(stop_server_cmd)
             except Exception as e: # Ignore error here that may occur if server already shut down
-                pass 
+                pass
+
 
             
 def test_basic_reliable_data_transfer():
@@ -150,10 +157,12 @@ def test_basic_reliable_data_transfer():
     # Can you think of how you can test this? Give it a try!
     pass
 
+
 def test_basic_retransmit():
     """Basic test: Check that when a packet is lost, it's retransmitted"""
     # Can you think of how you can test this? Give it a try!
     pass
+
 
 """
 this is a parameterized test that will run test_basic_ack_packets
@@ -164,6 +173,7 @@ because you must implement seq nums and ack nums correctly in Checkpoint 1
 """
 @pytest.mark.xfail # maker that we expect this test to fail (for now)
 @pytest.mark.parametrize("payload", ['p','pytest 1234567'])
+
 def test_basic_ack_packets(payload):
     """Basic test: Check if when you data packets,
     the server responds with correct ack packet with correct ack num.
@@ -183,3 +193,4 @@ def test_basic_ack_packets(payload):
         assert (resp[CMUTCP].flags == ACK_MASK), "ACK flag not present in listener response"
         assert (resp[CMUTCP].ack_num == (1000+len(payload))), "Expected ACK num {} but received ACK num {}".format(
             (1000 + len(payload)), resp[CMUTCP].ack_num)
+
