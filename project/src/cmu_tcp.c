@@ -65,10 +65,14 @@ int fdu_initiator_connect(cmu_socket_t *dst) {
   dst->window.sender->base =
       dst->syn_seq + 1;  // we'll start to send the first packet from here.
   dst->window.sender->nextseq = dst->window.sender->base;
+  dst->window.sender->timeout.tv_sec = DEFAULT_TIMEOUT_SEC;
+  dst->window.sender->timeout.tv_usec = DEFAULT_TIMEOUT_USEC;
 
   // initialize receiver
-  dst->window.receiver = create_pkt_window();
+  // dst->window.receiver = create_pkt_window();
+  dst->window.receiver = (receiver_window_t *)malloc(sizeof(receiver_window_t));
   dst->window.receiver->expect_seq = dst->window.last_seq_received + 1;
+  memset(dst->window.receiver->marked, 0, sizeof(dst->window.receiver->marked));
 
   LOG_INFO("established: sender->base(%d) expect_seq(%d)",
            dst->window.sender->base, dst->window.receiver->expect_seq);
@@ -98,10 +102,14 @@ int fdu_listener_connect(cmu_socket_t *dst) {
   dst->window.sender->base =
       dst->syn_seq + 1;  // we'll start to send the first packet from here.
   dst->window.sender->nextseq = dst->window.sender->base;
+  dst->window.sender->timeout.tv_sec = DEFAULT_TIMEOUT_SEC;
+  dst->window.sender->timeout.tv_usec = DEFAULT_TIMEOUT_USEC;
 
   // initialize receiver
-  dst->window.receiver = create_pkt_window();
+  // dst->window.receiver = create_pkt_window();
+  dst->window.receiver = (receiver_window_t *)malloc(sizeof(receiver_window_t));
   dst->window.receiver->expect_seq = dst->window.last_seq_received + 1;
+  memset(dst->window.receiver->marked, 0, sizeof(dst->window.receiver->marked));
 
   LOG_INFO("established: sender->base(%d) expect_seq(%d)",
            dst->window.sender->base, dst->window.receiver->expect_seq);
@@ -148,8 +156,6 @@ int cmu_socket(cmu_socket_t *dst, int flag, int port, char *serverIP) {
   pthread_mutex_init(&(dst->death_lock), NULL);
   dst->window.last_ack_received = 0;
   dst->window.last_seq_received = 0;
-  // dst->window.send_wnd = create_pkt_window();
-  dst->window.receiver = create_pkt_window();
   pthread_mutex_init(&(dst->window.ack_lock), NULL);
 
   if (pthread_cond_init(&dst->wait_cond, NULL) != 0) {
