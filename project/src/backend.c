@@ -133,6 +133,11 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
           snd_wnd->ack_cnt = 0;
           if (snd_wnd->nextseq > snd_wnd->base) {
             //  start_timer();
+            tcp_xmit_timer(&(snd_wnd->tp),&(snd_wnd->send_time));
+            if (((snd_wnd->tp.t_rto.tv_sec) > 0) | ((snd_wnd->tp.t_rto.tv_usec) > 0)){
+              printf("\n%u:%u\n",snd_wnd->tp.t_rto);
+              snd_wnd->timeout=snd_wnd->tp.t_rto;
+            }
             gettimeofday((struct timeval *)&(snd_wnd->send_time), NULL);
           }
         } else {
@@ -245,9 +250,8 @@ void check_for_data(cmu_socket_t *sock, int flags) {
   uint32_t plen = 0, buf_size = 0, n = 0;
   fd_set ackFD;
   struct timeval time_out;
-  time_out.tv_sec = 3;  // TODO (Zhou ) merge the dynamic value
-  time_out.tv_usec = 0;
-
+  time_out.tv_sec=3;
+  time_out.tv_usec=0;
   while (pthread_mutex_lock(&(sock->recv_lock)) != 0)
     ;
   switch (flags) {
@@ -419,6 +423,7 @@ void tcp_xmit_timer(cmu_tcpcb *tp, struct timeval *sent_time) {
     long int rtoval =
         ((tp->t_rttvar << TCP_DEVIATION_SHIFT) >> TCP_RTTVAR_SHIFT) +
         (tp->t_srtt >> TCP_RTT_SHIFT);
+    printf("%u\n",rtoval);
     if (rtoval < TCP_RTOMIN) rtoval = TCP_RTOMIN;
     if (rtoval > TCP_RTOMAX) rtoval = TCP_RTOMAX;
     if (rtoval >= 1000000) {
@@ -427,8 +432,6 @@ void tcp_xmit_timer(cmu_tcpcb *tp, struct timeval *sent_time) {
     } else {
       (tp->t_rto).tv_usec = rtoval;
     }
-    // printf("%u:%u\n",(tp->t_rto));
-    printf("%ld:%ld\n", tp->t_rto.tv_sec, tp->t_rto.tv_usec);
   } else {
     (tp->t_srtt) = rtt_usec << TCP_RTT_SHIFT;
     (tp->t_rttvar) = rtt_usec << (TCP_RTTVAR_SHIFT - 1);

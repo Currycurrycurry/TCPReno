@@ -22,7 +22,7 @@
 #define DEFAULT_TIMEOUT_USEC 0
 #define TCP_RTT_SHIFT 3
 #define TCP_RTTVAR_SHIFT 2
-#define TCP_RTOMIN 1           // 1 microsecond
+#define TCP_RTOMIN 100           // 100 microsecond
 #define TCP_RTOMAX 20000000    // 20 seconds
 #define TCP_DEVIATION_SHIFT 2  // 4*dev
 
@@ -55,6 +55,12 @@ typedef struct {
 } receiver_window_t;
 
 typedef struct {
+    long int t_srtt;
+    long int t_rttvar;
+    struct timeval t_rto;
+} cmu_tcpcb;
+
+typedef struct {
   uint16_t window_size;
   uint32_t base;
   uint32_t nextseq;
@@ -65,6 +71,7 @@ typedef struct {
   pthread_mutex_t ack_cnt_lock;
   struct timeval send_time;
   struct timeval timeout;
+  cmu_tcpcb tp;
 } sender_window_t;
 
 typedef struct {
@@ -130,11 +137,5 @@ typedef struct {
   int status;
   int syn_seq;
 } cmu_socket_t;
-
-typedef struct {
-  long int t_srtt;
-  long int t_rttvar;
-  struct timeval t_rto;
-} cmu_tcpcb;
 
 #endif
