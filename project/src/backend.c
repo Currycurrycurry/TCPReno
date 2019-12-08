@@ -135,7 +135,6 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
             //  start_timer();
             tcp_xmit_timer(&(snd_wnd->tp),&(snd_wnd->send_time));
             if (((snd_wnd->tp.t_rto.tv_sec) > 0) | ((snd_wnd->tp.t_rto.tv_usec) > 0)){
-              printf("\n%u:%u\n",snd_wnd->tp.t_rto);
               snd_wnd->timeout=snd_wnd->tp.t_rto;
             }
             gettimeofday((struct timeval *)&(snd_wnd->send_time), NULL);
@@ -423,7 +422,6 @@ void tcp_xmit_timer(cmu_tcpcb *tp, struct timeval *sent_time) {
     long int rtoval =
         ((tp->t_rttvar << TCP_DEVIATION_SHIFT) >> TCP_RTTVAR_SHIFT) +
         (tp->t_srtt >> TCP_RTT_SHIFT);
-    printf("%u\n",rtoval);
     if (rtoval < TCP_RTOMIN) rtoval = TCP_RTOMIN;
     if (rtoval > TCP_RTOMAX) rtoval = TCP_RTOMAX;
     if (rtoval >= 1000000) {
