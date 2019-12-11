@@ -382,7 +382,6 @@ void fdu_listener_disconnect(cmu_socket_t *sock){
 
       sendto(sock->socket, rsp, DEFAULT_HEADER_LEN, 0, (struct sockaddr*) &(sock->conn), conn_len);
       if(wait_ACK_time_out(sock) > 0) {
-//        sock->status = STATUS_FIN_WAIT_2;
         LOG_DEBUG("listener status : STATUS_FIN_WAIT_2");
         break;
       }
