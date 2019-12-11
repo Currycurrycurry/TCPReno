@@ -130,6 +130,7 @@ int fdu_listener_connect(cmu_socket_t *dst) {
  *  and the value returned will provide error information.
  *
  */
+
 int cmu_socket(cmu_socket_t *dst, int flag, int port, char *serverIP) {
   int sockfd, optval;
   socklen_t len;
@@ -477,6 +478,7 @@ void close_backend(cmu_socket_t *dst) {
  * Return: Returns error code information on the close operation.
  *
  */
+
 int cmu_close(cmu_socket_t *sock) {
   close_backend(sock);
   // execute 4 wave agreement according to differnt end type
