@@ -143,30 +143,29 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
       }
       break;
     case FIN_FLAG_MASK:
-      // send ACK when recieve FIN
       rsp_ack = get_seq(pkt) + 1;
-      seq = get_ack(pkt);
-      send_ACK(sock, seq, rsp_ack);
-      /*
-       * client state:TIME_WAIT, which means client has recieved FIN from server
-       * then server send FIN pkt currently
-       * thus client must assure terminate until server had recieved AKC
-       */
-      if (sock->type == TCP_INITATOR &&
-          sock->connection.disconnect == TIME_WAIT) {
-        start_timer(sock->timer);
-        return;
-      }
-      if (sock->type == TCP_INITATOR &&
-          sock->connection.disconnect == FIN_WAIT_2) {
-        sock->connection.disconnect = TIME_WAIT;
-      }
-      if (sock->type == TCP_LISTENER &&
-          sock->connection.disconnect == CONN_NO_WAIT) {
-        sock->connection.disconnect = CLOSE_WAIT;
-      }
+          seq = get_ack(pkt);
+          send_ACK(sock, seq, rsp_ack);
+          /*
+           * client state:TIME_WAIT, which means client has recieved FIN from server
+           * then server send FIN pkt currently
+           * thus client must assure terminate until server had recieved AKC
+           */
+          if (sock->type == TCP_INITATOR &&
+              sock->status == STATUS_TIME_WAIT) {
+            start_timer(sock->timer);
+            return;
+          }
+          if (sock->type == TCP_INITATOR &&
+              sock->status == STATUS_FIN_WAIT_2) {
+            sock->status = STATUS_TIME_WAIT;
+          }
+          if (sock->type == TCP_LISTENER) {
+            sock->status = STATUS_CLOSE_WAIT;
+          }
 
-      break;
+          break;
+
 
     default:
       LOG_DEBUG("receive payload packet");

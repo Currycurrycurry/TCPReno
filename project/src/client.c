@@ -67,7 +67,7 @@ int main(int argc, char **argv) {
   }
 
   functionality(&socket);
-  while(1);
+  //while(1);
 
   if (cmu_close(&socket) < 0) exit(EXIT_FAILURE);
   return EXIT_SUCCESS;

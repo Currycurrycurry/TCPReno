@@ -39,7 +39,7 @@
 #define TIMER_ON 1
 
 #define RCVBUFFER 23333 //temp value, should be revised later
-
+#define CONNECT_TIME_OUT 3000
 
 // typedef struct {
 //   uint32_t seq;
