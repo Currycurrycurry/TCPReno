@@ -9,7 +9,7 @@
  *
  */
 void functionality(cmu_socket_t *sock) {
-  char buf[9898];
+  char buf[RCVBUFFER];
   int read, n;
   FILE *fp;
 
@@ -19,11 +19,14 @@ void functionality(cmu_socket_t *sock) {
   printf("R: %s\n", buf);
   printf("N: %d\n", n);
 
-  fp = fopen("./src/cmu_tcp.c", "rb");
+  // fp = fopen("./test/testfile_19M.pdf", "rb");
+  // fp = fopen("./src/cmu_tcp.c", "rb");
+  fp = fopen("./test/random.input", "rb");
+  printf("*** finish fp open ***");
   n = 0;
   read = 1;
   while (read > 0) {
-    read = fread(buf, 1, 9898, fp);
+    read = fread(buf, 1, RCVBUFFER, fp);
     if (read > 0) cmu_write(sock, buf, read);
     n += read;
   }
