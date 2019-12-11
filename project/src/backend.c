@@ -25,6 +25,7 @@ void start_timer(cmu_timer_t *timer) {
  * Purpose: To tell if a packet (sequence number) has been acknowledged.
  *
  */
+
 int check_ack(cmu_socket_t *sock, uint32_t seq) {
   int result;
   while (pthread_mutex_lock(&(sock->window.ack_lock)) != 0)
@@ -98,7 +99,7 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
       assert(data_len == 0);
       if (sock->status == STATUS_LISTEN || sock->status == STATUS_SYN_RCVD) {
         seq = get_seq(pkt);
-        // create a SNYACK response
+        // create a SNYA CK response
         rsp = create_packet_buf(
             sock->my_port, ntohs(sock->conn.sin_port), sock->syn_seq, seq + 1,
             DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN,
@@ -114,7 +115,8 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
       break;
     case ACK_FLAG_MASK:
       LOG_DEBUG("receive ACK packet");
-      if (rand() % 2 != 0) {
+      // change the drop rate 
+      if (rand() % 5 == 0) {
         LOG_DEBUG("DROP");
         break;
       }
@@ -172,7 +174,7 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
 
     default:
       LOG_DEBUG("receive payload packet");
-      if (rand() % 2 != 0) {
+      if (rand() % 5 == 0) {
         LOG_DEBUG("DROP");
         break;
       }
@@ -241,7 +243,9 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
  * Purpose: To check for data received by the socket.
  *
  */
+
 void check_for_data(cmu_socket_t *sock, int flags) {
+  // LOG_DEBUG("enter check for data");
   char hdr[DEFAULT_HEADER_LEN];
   char *pkt;
   socklen_t conn_len = sizeof(sock->conn);
@@ -249,8 +253,10 @@ void check_for_data(cmu_socket_t *sock, int flags) {
   uint32_t plen = 0, buf_size = 0, n = 0;
   fd_set ackFD;
   struct timeval time_out;
+
   time_out.tv_sec=3;
   time_out.tv_usec=0;
+
   while (pthread_mutex_lock(&(sock->recv_lock)) != 0)
     ;
   switch (flags) {
@@ -338,6 +344,8 @@ void single_send(cmu_socket_t *sock, char *data, int buf_len) {
 
     gettimeofday(&wnd->send_time, NULL);
     while (TRUE) {  // in pure C, we don't have boolean type
+      //adv win
+      // if (buf_len > 0 && wnd->nextseq < wnd->base + MAX_WND_SIZE) {
       if (buf_len > 0 && wnd->nextseq < wnd->base + MAX_WND_SIZE) {
         // we have more packets to make & send, the second branch is for flow
         // control
