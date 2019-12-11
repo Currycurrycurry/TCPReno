@@ -135,6 +135,10 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
           snd_wnd->ack_cnt = 0;
           if (snd_wnd->nextseq > snd_wnd->base) {
             //  start_timer();
+            tcp_xmit_timer(&(snd_wnd->tp),&(snd_wnd->send_time));
+            if (((snd_wnd->tp.t_rto.tv_sec) > 0) | ((snd_wnd->tp.t_rto.tv_usec) > 0)){
+              snd_wnd->timeout=snd_wnd->tp.t_rto;
+            }
             gettimeofday((struct timeval *)&(snd_wnd->send_time), NULL);
           }
         } else {
@@ -149,30 +153,29 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
    
       break;
     case FIN_FLAG_MASK:
-      // send ACK when recieve FIN
       rsp_ack = get_seq(pkt) + 1;
-      seq = get_ack(pkt);
-      send_ACK(sock, seq, rsp_ack);
-      /*
-       * client state:TIME_WAIT, which means client has recieved FIN from server
-       * then server send FIN pkt currently
-       * thus client must assure terminate until server had recieved AKC
-       */
-      if (sock->type == TCP_INITATOR &&
-          sock->connection.disconnect == TIME_WAIT) {
-        start_timer(sock->timer);
-        return;
-      }
-      if (sock->type == TCP_INITATOR &&
-          sock->connection.disconnect == FIN_WAIT_2) {
-        sock->connection.disconnect = TIME_WAIT;
-      }
-      if (sock->type == TCP_LISTENER &&
-          sock->connection.disconnect == CONN_NO_WAIT) {
-        sock->connection.disconnect = CLOSE_WAIT;
-      }
+          seq = get_ack(pkt);
+          send_ACK(sock, seq, rsp_ack);
+          /*
+           * client state:TIME_WAIT, which means client has recieved FIN from server
+           * then server send FIN pkt currently
+           * thus client must assure terminate until server had recieved AKC
+           */
+          if (sock->type == TCP_INITATOR &&
+              sock->status == STATUS_TIME_WAIT) {
+            start_timer(sock->timer);
+            return;
+          }
+          if (sock->type == TCP_INITATOR &&
+              sock->status == STATUS_FIN_WAIT_2) {
+            sock->status = STATUS_TIME_WAIT;
+          }
+          if (sock->type == TCP_LISTENER) {
+            sock->status = STATUS_CLOSE_WAIT;
+          }
 
-      break;
+          break;
+
 
     default:
       // LOG_DEBUG("receive payload packet");
@@ -259,8 +262,9 @@ void check_for_data(cmu_socket_t *sock, int flags) {
   uint32_t plen = 0, buf_size = 0, n = 0;
   fd_set ackFD;
   struct timeval time_out;
-  time_out.tv_sec = 3 ; // TODO (Zhou ) merge the dynamic value
-  time_out.tv_usec = 0;
+
+  time_out.tv_sec=3;
+  time_out.tv_usec=0;
 
   while (pthread_mutex_lock(&(sock->recv_lock)) != 0)
     ;
@@ -444,8 +448,6 @@ void tcp_xmit_timer(cmu_tcpcb *tp, struct timeval *sent_time) {
     } else {
       (tp->t_rto).tv_usec = rtoval;
     }
-    // printf("%u:%u\n",(tp->t_rto));
-    printf("%ld:%ld\n", tp->t_rto.tv_sec, tp->t_rto.tv_usec);
   } else {
     (tp->t_srtt) = rtt_usec << TCP_RTT_SHIFT;
     (tp->t_rttvar) = rtt_usec << (TCP_RTTVAR_SHIFT - 1);

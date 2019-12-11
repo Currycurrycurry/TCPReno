@@ -22,7 +22,7 @@
 #define DEFAULT_TIMEOUT_USEC 0
 #define TCP_RTT_SHIFT 3
 #define TCP_RTTVAR_SHIFT 2
-#define TCP_RTOMIN 1           // 1 microsecond
+#define TCP_RTOMIN 100           // 100 microsecond
 #define TCP_RTOMAX 20000000    // 20 seconds
 #define TCP_DEVIATION_SHIFT 2  // 4*dev
 
@@ -38,7 +38,14 @@
 #define CLOSED 6
 #define TIMER_ON 1
 
+#define SLOW_START 0
+#define CONGESTION_AVOIDANCE 1
+#define FAST_RECOVERY 2
+#define MSS 500 //unit:byte
+
 #define RCVBUFFER 65535 //temp value, should be revised later
+
+#define CONNECT_TIME_OUT 3000
 
 
 typedef struct {
@@ -48,6 +55,12 @@ typedef struct {
   uint8_t marked[MAX_WND_SIZE];
   uint32_t expect_seq;
 } receiver_window_t;
+
+typedef struct {
+    long int t_srtt;
+    long int t_rttvar;
+    struct timeval t_rto;
+} cmu_tcpcb;
 
 typedef struct {
   uint16_t window_size;
@@ -61,6 +74,9 @@ typedef struct {
   struct timeval send_time;
   struct timeval timeout;
   uint16_t rwnd; // for flow control
+  uint16_t cwnd; // for congestion control
+  int ssthresh; // 
+  cmu_tcpcb tp;
 } sender_window_t;
 
 typedef struct {
@@ -72,7 +88,6 @@ typedef struct {
 
   pthread_mutex_t sender_lock;
   pthread_mutex_t receiver_lock;
-
   int ack_cnt;
   pthread_mutex_t ack_lock;
 
@@ -103,6 +118,9 @@ typedef struct {
 #define STATUS_CLOSE_WAIT 8
 #define STATUS_LAST_ACK 9
 
+
+
+
 typedef struct {
   int socket;
   pthread_t thread_id;
@@ -126,11 +144,5 @@ typedef struct {
   int syn_seq;
   uint16_t occupiedBuffer;
 } cmu_socket_t;
-
-typedef struct {
-  long int t_srtt;
-  long int t_rttvar;
-  struct timeval t_rto;
-} cmu_tcpcb;
 
 #endif
