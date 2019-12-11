@@ -16,9 +16,7 @@
 
 ​        TCP为全双工连接，必须从client和server两端单独进行关闭，下方图片展示了从客户端主动发起挥手关闭tcp连接的过程。
 
-
-
-![image-20191211211059818](C:\Users\Lu\AppData\Roaming\Typora\typora-user-images\image-20191211211059818.png)
+![tcpwave.png](./assets/tcpwave.png)
 
 **实现过程中主要实现的状态标识释义：**
 
@@ -48,7 +46,12 @@ STATUS CLOSED： 挥手发起方和被动方在完成四次挥手动作后断开
 
 ### TCP流量控制实现
 
+#### 从停等协议到滑窗协议
+
+#### rwnd变量添加
 
 ### TCP拥塞控制实现
 
+
+### TCP RTO计算
 
