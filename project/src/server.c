@@ -23,11 +23,14 @@ void functionality(cmu_socket_t *sock) {
   n = 0;
   while (n < 15706) {
     read = cmu_read(sock, buf + n, RCVBUFFER, NO_FLAG);
+    sock->window.sender->rwnd = (uint16_t)(RCVBUFFER - (sock->received_len - read));
+    LOG_DEBUG("!!!After this read, the rwnd updates to  [%d]",sock->window.sender->rwnd );
     n += read;
   }
   printf("N: %d\n", n);
-  fp = fopen("./test/random_copy.input", "w+");
-  fp = fopen("./test/testfile_19M_copy.pdf", "w+");
+  fp = fopen("./test/file.c", "w+");
+  // fp = fopen("./test/random_copy.input", "w+");
+  // fp = fopen("./test/testfile_19M_copy.pdf", "w+");
   fwrite(buf, 1, n, fp);
 }
 
@@ -66,10 +69,10 @@ int main(int argc, char **argv) {
     LOG_ERROR("socket initialize error, bad return code");
     exit(EXIT_FAILURE);
   }
-
+  LOG_DEBUG("before start: rwnd is [%d]",socket.window.sender->rwnd);
   functionality(&socket);
   LOG_DEBUG("server finished");
-  //while(1);
+  // while(1);
 
   if (cmu_close(&socket) < 0) exit(EXIT_FAILURE);
   return EXIT_SUCCESS;
