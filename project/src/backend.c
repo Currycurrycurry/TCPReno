@@ -355,7 +355,7 @@ void single_send(cmu_socket_t *sock, char *data, int buf_len) {
     while (TRUE) {  // in pure C, we don't have boolean type
       //adv win
       // if (buf_len > 0 && wnd->nextseq < wnd->base + MAX_WND_SIZE) {
-       LOG_DEBUG("[%d] rwnd",wnd->rwnd);
+      //  LOG_DEBUG("[%d] rwnd",wnd->rwnd);
       if (buf_len > 0 && wnd->nextseq < wnd->base + wnd->rwnd ) {
         // we have more packets to make & send, the second branch is for flow
         // control

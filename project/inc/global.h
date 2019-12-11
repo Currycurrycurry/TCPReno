@@ -142,7 +142,6 @@ typedef struct {
   connection_t connection;
   int status;
   int syn_seq;
-  uint16_t occupiedBuffer;
 } cmu_socket_t;
 
 #endif
