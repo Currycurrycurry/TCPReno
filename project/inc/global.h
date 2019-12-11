@@ -38,6 +38,9 @@
 #define CLOSED 6
 #define TIMER_ON 1
 
+#define RCVBUFFER 23333 //temp value, should be revised later
+
+
 // typedef struct {
 //   uint32_t seq;
 //   char* payload;
@@ -88,7 +91,7 @@ typedef struct {
   uint8_t state;
 } cmu_timer_t;
 
-//????
+
 typedef struct {
   uint32_t expect_seq;
   uint32_t expect_ack;
@@ -115,7 +118,7 @@ typedef struct {
   uint16_t their_port;
   struct sockaddr_in conn;
   char* received_buf;
-  int received_len;
+  int received_len; //rcvbuffer
   pthread_mutex_t recv_lock;
   pthread_cond_t wait_cond;
   char* sending_buf;
@@ -125,10 +128,11 @@ typedef struct {
   int dying;
   pthread_mutex_t death_lock;
   window_t window;
-  cmu_timer_t* timer;  // no use
+  cmu_timer_t* timer; 
   connection_t connection;
   int status;
   int syn_seq;
+  int rwnd; // for flow control
 } cmu_socket_t;
 
 typedef struct {
