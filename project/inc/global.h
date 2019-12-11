@@ -38,7 +38,9 @@
 #define CLOSED 6
 #define TIMER_ON 1
 
-#define RCVBUFFER 2222222 //temp value, should be revised later
+
+#define RCVBUFFER 23333 //temp value, should be revised later
+#define CONNECT_TIME_OUT 3000
 
 
 typedef struct {

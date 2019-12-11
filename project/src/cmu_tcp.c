@@ -314,161 +314,178 @@ int cmu_write(cmu_socket_t *sock, char *src, int length) {
   return EXIT_SUCCESS;
 }
 
-/*
- * Disconnect from the initiator, which could be either client or server.
- * Param: dst - Destination port
- */
-
-void fdu_initiator_disconnect(cmu_socket_t *dst) {
-  char *rsp;
-  // int unchecked_pkt_num,buf_len;
+//close函数由client或者server单独调用，被调用一方就是initiator disconnect，另一方自动为listener，根据sock的connection取到自己的sock套接字
+void fdu_initator_disconnect(cmu_socket_t *dst) {
+  LOG_DEBUG("entering disconnect at initiator:");
   size_t conn_len = sizeof(dst->conn);
-
-  // Make sure the child thread of the client is over
-  dst->connection.disconnect = FIN_WAIT_1;
-
-  // create and send FIN pkt with ack dst->sender->nextseq and seq
-  // dst->sender->nextseq rsp = create_packet_buf(dst->my_port,
-  // ntohs(dst->conn.sin_port), dst->sender->nextseq, dst->sender->nextseq,
-  //                      DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, FIN_FLAG_MASK,
-  //                      1, 0, NULL, NULL, 0);
-
+  char *rsp;
+  dst->status = STATUS_FIN_WAIT_1;
+  LOG_DEBUG("initiator status : STATUS_FIN_WAIT_1");
+  //阶段一：循环发送FIN pkt，将状态由established 设置为STATUS_FIN_WAIT_1
   while (TRUE) {
-    rsp = create_packet_buf(
-        dst->my_port, ntohs(dst->conn.sin_port), (dst->window.sender)->nextseq,
-        (dst->window.receiver)->expect_seq, DEFAULT_HEADER_LEN,
-        DEFAULT_HEADER_LEN, FIN_FLAG_MASK, 1, 0, NULL, NULL, 0);
-    sendto(dst->socket, rsp, DEFAULT_HEADER_LEN, 0,
-           (struct sockaddr *)&(dst->conn), conn_len);
-    check_for_data(dst, TIMEOUT);
-    if (dst->connection.disconnect == FIN_WAIT_2) {
+    rsp = create_packet_buf(dst->my_port, dst->conn.sin_port, dst->window.sender->nextseq,
+                            dst->window.receiver->expect_seq,
+                            DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, FIN_FLAG_MASK, 1, 0, NULL, NULL, 0);
+    sendto(dst->socket, rsp, DEFAULT_HEADER_LEN, 0, (struct sockaddr *) &(dst->conn), conn_len);
+    LOG_DEBUG("client_port:[%d] server_port:[%d]", dst->my_port, dst->their_port);
+
+    //阶段二：接收到 ACK pkt，将状态由STATUS_FIN_WAIT_1设置为STATUS_FIN_WAIT_2
+    if (wait_ACK_time_out(dst) > 0) {
+      dst->status = STATUS_FIN_WAIT_2;
+      LOG_DEBUG("initiator status : STATUS_FIN_WAIT_2");
       break;
     }
   }
   free(rsp);
 
-  // wait for the FIN packet from listen
+  //阶段三：仍可接收普通数据包，循环同时注意接收FIN pkt，一旦收到，回复ACK同时，将状态由STATUS_FIN_WAIT_2 设置为TIME_WAIT
   while (TRUE) {
-    check_for_data(dst, NO_WAIT);
-    if (dst->connection.disconnect == TIME_WAIT) {
+    if (wait_FIN_no_wait(dst) > 0) {  // 这里不等待尝试接受FIN包，接收到了退出循环
+      send_ACK(dst, dst->window.sender->nextseq, dst->window.receiver->expect_seq);
+      //dst->window.last_ack_received
+      dst->status = STATUS_TIME_WAIT;
+      LOG_DEBUG("initiator status : STATUS_TIME_WAIT");
       break;
     }
   }
 
-  struct timeval current_time;
-
-  // TIME_WAIT check for whether overtime frequently, if overtime then the
-  // listen is disconnected
+  //阶段四：等待超时2ML
+  struct timeval current;
+  gettimeofday((struct timeval *)&(dst->window.sender->send_time), NULL);
   while (TRUE) {
-    check_for_data(dst, NO_WAIT);
-    gettimeofday(&current_time, NULL);
-    // overtime
-    if (current_time.tv_sec - dst->timer->start_time.tv_sec >
-        dst->connection.disconnect_time / 1000) {
+    gettimeofday(&current, NULL);
+    if (current.tv_sec - dst->window.sender->send_time.tv_sec > DEFAULT_TIMEOUT_SEC * 1000 / 1000) {
+      dst->status =  STATUS_CLOSED;
+      LOG_DEBUG("initiator status : STATUS_CLOSED");
       break;
+    }
+    // 当前状态是TIME_WAIT, 不断检查是否超时同时不断检查是否可以收到包，如果可以收到包，就回复ACK，重启计时器
+    if (initator_wait_any_packet_no_wait(dst) > 0) {
+      send_ACK(dst, dst->window.sender->nextseq,
+               dst->window.receiver->expect_seq);                                           ///////////////////////////////
+      gettimeofday((struct timeval *)&(dst->window.sender->send_time), NULL);
     }
   }
 }
 
-/*
- * Disconnect from the listener, which could be either client or server.
- * Param: sock - the socket used
- */
-void fdu_listener_disconnect(cmu_socket_t *sock) {
+void fdu_listener_disconnect(cmu_socket_t *sock){
+  LOG_DEBUG("entering disconnect at listener:");
   size_t conn_len = sizeof(sock->conn);
+  //cmu_socket_t *sock = dst->
+  char *rsp;
+  //阶段一：循环接收FIN pkt，一旦接收到状态由established 转换为CLOSE_WAIT,并发送ACK
+  if(sock->status != STATUS_CLOSE_WAIT){
 
-  // wait for the FIN pkt from the initiator
-  while (TRUE) {
-    if (sock->connection.disconnect == CLOSE_WAIT) {
-      break;
+    LOG_DEBUG("server_port:[%d] client_port:[%d]",sock->my_port, ntohs(sock->conn.sin_port));
+    rsp = create_packet_buf(sock->my_port, sock->conn.sin_port, sock->window.sender->nextseq, sock->window.receiver->expect_seq,
+                            DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, FIN_FLAG_MASK, 1, 0, NULL, NULL, 0);
+    while(TRUE) {
+
+      sendto(sock->socket, rsp, DEFAULT_HEADER_LEN, 0, (struct sockaddr*) &(sock->conn), conn_len);
+      if(wait_ACK_time_out(sock) > 0) {
+//        sock->status = STATUS_FIN_WAIT_2;
+        LOG_DEBUG("listener status : STATUS_FIN_WAIT_2");
+        break;
+      }
     }
-    check_for_data(sock, NO_WAIT);
+    sock->window.sender->nextseq++;
+    free(rsp);
+
+    //阶段二：确认没有数据需要发送后，循环发送FIN pkt，并将状态改为LAST_ACK
+    while(TRUE){
+
+      if(wait_FIN_no_wait(sock) > 0){
+        sock->status = STATUS_CLOSE_WAIT;
+        LOG_DEBUG("listener status : CLOSE_WAIT");
+        send_ACK(sock,sock->window.sender->nextseq,sock->window.receiver->expect_seq);
+        break;
+      }
+    }
   }
 
-  // create and send FIN pkt with ack dst->sender->nextseq and seq
-  // dst->sender->nextseq
-  char *rsp = create_packet_buf(
-      sock->my_port, ntohs(sock->conn.sin_port), sock->window.sender->nextseq,
-      sock->window.sender->nextseq, DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN,
-      FIN_FLAG_MASK, 1, 0, NULL, NULL, 0);
+  rsp = create_packet_buf(sock->my_port, sock->conn.sin_port, sock->window.sender->nextseq, sock->window.receiver->expect_seq,
+                          DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN, FIN_FLAG_MASK, 1, 0, NULL, NULL, 0);
 
-  sock->connection.disconnect = LAST_ACK;
+  sock->status = STATUS_LAST_ACK;
+  LOG_DEBUG("listener status : STATUS_LAST_ACK");
 
-  while (TRUE) {
-    sendto(sock->socket, rsp, DEFAULT_HEADER_LEN, 0,
-           (struct sockaddr *)&(sock->conn), conn_len);
-    // check whether timeout or not
-    check_for_data(sock, TIMEOUT);
-    // if the initiator is "CLOSED" then break
-    if (sock->connection.disconnect == CLOSED) {
+  while(TRUE){
+
+    sendto(sock->socket, rsp, DEFAULT_HEADER_LEN, 0, (struct sockaddr*) &(sock->conn), conn_len);
+    if(wait_ACK_time_out(sock) > 0) {
+      sock->status = STATUS_CLOSED;
+      LOG_DEBUG("listener status : STATUS_CLOSED");
       break;
     }
   }
+
   free(rsp);
+
 }
 
-/*
- * free the RAM uesd by sock and close the Monitor descriptor
- */
-int fdu_free_socket(cmu_socket_t *sock) {
-  if (sock != NULL) {
-    if (sock->received_buf != NULL) free(sock->received_buf);
-    if (sock->sending_buf != NULL) free(sock->sending_buf);
-
-    if (sock->timer != NULL) {
-      free(sock->timer);
-    }
-
-    if (sock->window.receiver != NULL) {
+// 释放socK的内存的同时关闭监听描述符
+int free_cmu_socket(cmu_socket_t * sock) {
+  if(sock != NULL){
+    if(sock->received_buf != NULL)
+      free(sock->received_buf);
+    if(sock->sending_buf != NULL)
+      free(sock->sending_buf);
+    LOG_DEBUG("freed received_buf and sending_buf now");
+//    if(sock->timer != NULL) {
+//      free(sock->timer);
+//    }
+    if(sock->window.receiver != NULL) {
       free(sock->window.receiver);
+      LOG_DEBUG("freed receiver now");
     }
-    if (sock->window.sender != NULL) {
-      for (int i = 0; i < sock->window.sender->window_size; i++) {
-        if (sock->window.sender->win_packet_buffer[i] != NULL) {
-          free(sock->window.sender->win_packet_buffer[i]);
-        }
-      }
+    if(sock->window.sender != NULL) {
+//      for(int i = 0; i < sock->window.sender->window_size; i++) {
+//          LOG_DEBUG("=====[%d]",i);
+//        if(sock->window.sender->win_packet_buffer[i] != NULL) {
+//          free(sock->window.sender->win_packet_buffer[i]);
+//        }
+//      }
       free(sock->window.sender);
+      LOG_DEBUG("freed sender now");
     }
-  } else {
+    LOG_DEBUG("freed sock now");
+  }
+  else{
     perror("ERORR Null socket\n");
     return EXIT_ERROR;
   }
   return close(sock->socket);
 }
 
-void close_backend(cmu_socket_t *dst) {
-  int unchecked_pkt_num, buf_len;
-
-  while (TRUE) {
-    while (pthread_mutex_lock(&(dst->window.sender_lock)) != 0)
-      ;
-    // the num of data pkt unchecked
-    unchecked_pkt_num = dst->window.sender->nextseq - dst->window.sender->base;
-
-    while (pthread_mutex_lock(&(dst->send_lock)) != 0)
-      ;
-    // the length of unsend buffer
-    buf_len = dst->sending_len;
-
-    // release the lock
-    if (buf_len == 0 && unchecked_pkt_num == 0) {
+/**
+ *  当没有数据需要发送时，并且重发已经完成时结束backend线程
+ *
+ */
+void close_backend(cmu_socket_t * dst) {
+  int unchecked_pkt_num,buf_len;
+  while(TRUE) {
+    //while(pthread_mutex_lock(&(dst->send_window_lock)) != 0);
+    unchecked_pkt_num = dst->window.sender->nextseq - dst->window.sender->base; //没有确认的数据包数量
+    while(pthread_mutex_lock(&(dst->send_lock)) != 0);
+    buf_len = dst->sending_len; //没有发送的缓存的长度
+    if(buf_len == 0 && unchecked_pkt_num==0){
       pthread_mutex_unlock(&(dst->send_lock));
-      pthread_mutex_unlock(&(dst->window.sender_lock));
+      //pthread_mutex_unlock(&(dst->send_window_lock));
       break;
     }
     pthread_mutex_unlock(&(dst->send_lock));
-    pthread_mutex_unlock(&(dst->window.sender_lock));
+    //pthread_mutex_unlock(&(dst->send_window_lock));
   }
 
-  while (pthread_mutex_lock(&(dst->death_lock)) != 0)
-    ;
+  while(pthread_mutex_lock(&(dst->death_lock)) != 0);
   dst->dying = TRUE;
   pthread_mutex_unlock(&(dst->death_lock));
 
-  // terminate another thread
-  pthread_join(dst->thread_id, NULL);
+  pthread_join(dst->thread_id, NULL); // 结束另外一个线程
 }
+
+
+int cmu_close(cmu_socket_t * sock) {
 
 /*
  * Param: sock - The socket to close.
@@ -479,12 +496,118 @@ void close_backend(cmu_socket_t *dst) {
  *
  */
 
-int cmu_close(cmu_socket_t *sock) {
   close_backend(sock);
-  // execute 4 wave agreement according to differnt end type
-  if (sock->type == TCP_INITATOR)
-    fdu_initiator_disconnect(sock);
+  LOG_DEBUG("sock close backend");
+  if(sock->type == TCP_INITATOR)
+    fdu_initator_disconnect(sock);
   else
     fdu_listener_disconnect(sock);
-  return fdu_free_socket(sock);
+
+  return free_cmu_socket(sock);
+
+}
+
+int wait_ACK_time_out(cmu_socket_t * sock){
+  // 在一定的时间内等待ACK，并做相关验证
+  // case WAIT_ACK_FIN_TIMEOUT:
+  fd_set ackFD;
+  ssize_t len = 0;
+  struct timeval time_out;
+  char hdr[DEFAULT_HEADER_LEN];
+  char *pkt;
+  uint32_t expect_ack = sock->window.sender->nextseq + 1;
+  uint32_t expect_seq = 0;
+  uint32_t plen = 0, buf_size = 0, n = 0;
+  socklen_t conn_len = sizeof(sock->conn);
+  time_out.tv_sec = CONNECT_TIME_OUT / 1000;
+  time_out.tv_usec = (CONNECT_TIME_OUT % 1000) * 1000;
+  FD_ZERO(&ackFD);
+  FD_SET(sock->socket, &ackFD);
+  if(select(sock->socket+1, &ackFD, NULL, NULL, &time_out) <= 0){ // 没有等到数据或者出错
+    return -1;
+  }
+  len = recvfrom(sock->socket, hdr, DEFAULT_HEADER_LEN, MSG_DONTWAIT | MSG_PEEK,
+                 (struct sockaddr *) &(sock->conn), &conn_len);
+  if(len >= DEFAULT_HEADER_LEN){
+    plen = get_plen(hdr); // 包长度，含头部
+    pkt = malloc(plen);
+    while(buf_size < plen){ // 读出整个包，网络是个流管道，不读取的话下一次会读到，影响通信
+      n = recvfrom(sock->socket, pkt + buf_size, plen - buf_size,
+                   NO_FLAG, (struct sockaddr *) &(sock->conn), &conn_len);
+      // 从udp中获取对方的ip和端口，存在sock->conn
+      // 读取数据并移除
+      buf_size = buf_size + n;
+    }
+    free(pkt);
+    if(get_flags(hdr) == ACK_FLAG_MASK && (expect_ack == 0 || get_ack(hdr) == expect_ack) && (expect_seq == 0 || get_seq(hdr) == expect_seq) ){
+      return 1;
+    }
+    if(get_flags(hdr) == FIN_FLAG_MASK){
+      send_ACK(sock, sock->window.sender->nextseq, get_seq(hdr) + 1);
+    }
+  }
+  return -1;
+}
+
+int wait_FIN_no_wait(cmu_socket_t * sock){
+  // case WAIT_FIN_TIMEOUT:
+  ssize_t len = 0;
+  char hdr[DEFAULT_HEADER_LEN];
+  char *pkt;
+  uint32_t plen = 0, buf_size = 0, n = 0;
+  socklen_t conn_len = sizeof(sock->conn);
+
+  len = recvfrom(sock->socket, hdr, DEFAULT_HEADER_LEN, MSG_DONTWAIT | MSG_PEEK,
+                 (struct sockaddr *) &(sock->conn), &conn_len);
+
+  if(len >= DEFAULT_HEADER_LEN){
+    plen = get_plen(hdr); // 包长度，含头部
+    pkt = malloc(plen);
+    while(buf_size < plen){ // 读出整个包，网络是个流管道，不读取的话下一次会读到，影响通信
+      n = recvfrom(sock->socket, pkt + buf_size, plen - buf_size,
+                   NO_FLAG, (struct sockaddr *) &(sock->conn), &conn_len);
+      // 从udp中获取对方的ip和端口，存在sock->conn
+      // 读取数据并移除
+      buf_size = buf_size + n;
+    }
+    free(pkt);
+    if(get_flags(hdr) == FIN_FLAG_MASK){
+      sock->window.receiver->expect_seq = get_seq(hdr) + 1;                             ////////////////////////////////////////////////////////////////
+      return 1;
+    }else{
+      uint32_t ack = get_seq(hdr) + get_plen(hdr) - DEFAULT_HEADER_LEN;
+      send_ACK(sock, sock->window.sender->nextseq,ack );
+      // sock->window.receiver->expect_seq += get_plen(hdr) - DEFAULT_HEADER_LEN;
+    }
+  }
+  return -1;
+}
+
+int initator_wait_any_packet_no_wait(cmu_socket_t * sock) {
+  //case WAIT_ANY_PKT:
+  ssize_t len = 0;
+  char hdr[DEFAULT_HEADER_LEN];
+  char *pkt;
+  uint32_t plen = 0;
+  uint32_t buf_size = 0;
+  uint32_t n = 0;
+  socklen_t conn_len = sizeof(sock->conn);
+
+  len = recvfrom(sock->socket, hdr, DEFAULT_HEADER_LEN, MSG_DONTWAIT | MSG_PEEK,
+                 (struct sockaddr *) &(sock->conn), &conn_len);
+
+  if (len >= DEFAULT_HEADER_LEN) {
+    plen = get_plen(hdr);
+    pkt = malloc(plen);
+    while (buf_size < plen) {
+      n = recvfrom(sock->socket, pkt + buf_size, plen - buf_size,
+                   NO_FLAG, (struct sockaddr *) &(sock->conn), &conn_len);
+      buf_size = buf_size + n;
+    }
+    free(pkt);
+
+    sock->window.receiver->expect_seq = get_seq(hdr) + 1;
+    return 1;
+  }
+  return -1;
 }
