@@ -3,7 +3,6 @@ HOST=$(hostname)
 IFNAME='enp0s8'
 FUNCTION_TO_RUN=$1
 PCAP_NAME=$2
-
 if [ -z "$FUNCTION_TO_RUN" ]
     then
         echo "usage: capture_packets.sh < start | stop | analyze > [PCAP_NAME]"

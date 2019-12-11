@@ -116,10 +116,10 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
     case ACK_FLAG_MASK:
       LOG_DEBUG("receive ACK packet");
       // change the drop rate 
-      if (rand() % 5 == 0) {
-        LOG_DEBUG("DROP");
-        break;
-      }
+      // if (rand() % 5 == 0) {
+      //   LOG_DEBUG("DROP");
+      //   break;
+      // }
       // no matter what ack number we have received, we won't let it go
       while (pthread_mutex_lock(&(sock->window.ack_lock)) != 0)
         ;
@@ -168,11 +168,11 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
 
 
     default:
-      LOG_DEBUG("receive payload packet");
-      if (rand() % 5 == 0) {
-        LOG_DEBUG("DROP");
-        break;
-      }
+      // LOG_DEBUG("receive payload packet");
+      // if (rand() % 5 == 0) {
+      //   LOG_DEBUG("DROP");
+      //   break;
+      // }
       if (sock->status == STATUS_SYN_RCVD) {
         // we are not ready yet, so we pick and check the ack number and discard
         // the payload which will in the future retransmit.

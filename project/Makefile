@@ -37,4 +37,4 @@ testing_handshake: $(OBJS)
 	$(CC) $(FLAGS) $(TEST_DIR)/testing_handshake.c -o $(TEST_DIR)/testing_handshake $(OBJS)
 
 clean:
-	-rm -f $(BUILD_DIR)/*.o client server $(TEST_DIR)/testing_server $(TEST_DIR)/testing_handshake $(TEST_DIR)/file.c $(TEST_DIR)/random.input
+	-rm -f $(BUILD_DIR)/*.o client server $(TEST_DIR)/testing_server $(TEST_DIR)/testing_handshake $(TEST_DIR)/file.c 
