@@ -69,6 +69,7 @@ int main(int argc, char **argv) {
     exit(EXIT_FAILURE);
   }
 
+  LOG_DEBUG("before start: rwnd is [%d]",socket.window.sender->rwnd);
   functionality(&socket);
   while(1);
 

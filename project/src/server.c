@@ -23,6 +23,8 @@ void functionality(cmu_socket_t *sock) {
   n = 0;
   while (n < 15706) {
     read = cmu_read(sock, buf + n, RCVBUFFER, NO_FLAG);
+    sock->occupiedBuffer = (uint16_t)(sock->received_len - read);
+    LOG_DEBUG("sock->occupiedBuffer [%d]",sock->occupiedBuffer);
     n += read;
   }
   printf("N: %d\n", n);
@@ -66,7 +68,7 @@ int main(int argc, char **argv) {
     LOG_ERROR("socket initialize error, bad return code");
     exit(EXIT_FAILURE);
   }
-
+  LOG_DEBUG("before start: rwnd is [%d]",socket.window.sender->rwnd);
   functionality(&socket);
   LOG_DEBUG("server finished");
   while(1);

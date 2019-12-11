@@ -68,6 +68,9 @@ int fdu_initiator_connect(cmu_socket_t *dst) {
   dst->window.sender->nextseq = dst->window.sender->base;
   dst->window.sender->timeout.tv_sec = DEFAULT_TIMEOUT_SEC;
   dst->window.sender->timeout.tv_usec = DEFAULT_TIMEOUT_USEC;
+  LOG_INFO("Before setting the rwnd:");
+  dst->window.sender->rwnd = RCVBUFFER; // add for flow control
+  LOG_INFO("the initiator rwnd is initialized to %d",dst->window.sender->rwnd);
 
   // initialize receiver
   // dst->window.receiver = create_pkt_window();
@@ -105,6 +108,9 @@ int fdu_listener_connect(cmu_socket_t *dst) {
   dst->window.sender->nextseq = dst->window.sender->base;
   dst->window.sender->timeout.tv_sec = DEFAULT_TIMEOUT_SEC;
   dst->window.sender->timeout.tv_usec = DEFAULT_TIMEOUT_USEC;
+  LOG_INFO("Before setting the rwnd:");
+  dst->window.sender->rwnd = RCVBUFFER; // add for flow control
+  LOG_INFO("the listner rwnd is initialized to %d",dst->window.sender->rwnd);
 
   // initialize receiver
   // dst->window.receiver = create_pkt_window();
@@ -159,9 +165,9 @@ int cmu_socket(cmu_socket_t *dst, int flag, int port, char *serverIP) {
   dst->window.last_ack_received = 0;
   dst->window.last_seq_received = 0;
   pthread_mutex_init(&(dst->window.ack_lock), NULL);
+  dst->occupiedBuffer = 0;//add for flow control
 
-  //add for flow control
-  dst->rwnd = RCVBUFFER;
+  
   if (pthread_cond_init(&dst->wait_cond, NULL) != 0) {
     perror("ERROR condition variable not set\n");
     return EXIT_ERROR;
@@ -261,11 +267,12 @@ int cmu_read(cmu_socket_t *sock, char *dst, int length, int flags) {
       }
     case NO_WAIT:
       if (sock->received_len > 0) {
-        if (sock->received_len > length)
+        if (sock->received_len > length){
           read_len = length;
-        else
+        } 
+        else{
           read_len = sock->received_len;
-
+        }
         memcpy(dst, sock->received_buf, read_len);
         if (read_len < sock->received_len) {
           new_buf = malloc(sock->received_len - read_len);
@@ -274,11 +281,14 @@ int cmu_read(cmu_socket_t *sock, char *dst, int length, int flags) {
           free(sock->received_buf);
           sock->received_len -= read_len;
           sock->received_buf = new_buf;
+        
         } else {
           free(sock->received_buf);
           sock->received_buf = NULL;
           sock->received_len = 0;
         }
+       
+
       }
       break;
     default:
