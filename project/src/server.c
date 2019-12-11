@@ -8,8 +8,9 @@
  *  the sockets will be used.
  *
  */
+
 void functionality(cmu_socket_t *sock) {
-  char buf[23333];
+  char buf[RCVBUFFER];
   FILE *fp;
   int n, read;
 
@@ -21,7 +22,7 @@ void functionality(cmu_socket_t *sock) {
 
   n = 0;
   while (n < 15706) {
-    read = cmu_read(sock, buf + n, 23333, NO_FLAG);
+    read = cmu_read(sock, buf + n, RCVBUFFER, NO_FLAG);
     n += read;
   }
   printf("N: %d\n", n);
@@ -48,8 +49,8 @@ int main(int argc, char **argv) {
     ;
   else {
     // use 0.0.0.0 to test on localhost
-    serverip = "0.0.0.0";
-    // serverip = "10.0.0.1";
+    // serverip = "0.0.0.0";
+    serverip = "10.0.0.1";
   }
 
   serverport = getenv("serverport15441");
