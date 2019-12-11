@@ -38,16 +38,10 @@
 #define CLOSED 6
 #define TIMER_ON 1
 
+
 #define RCVBUFFER 23333 //temp value, should be revised later
 #define CONNECT_TIME_OUT 3000
 
-// typedef struct {
-//   uint32_t seq;
-//   char* payload;
-//   int plen;
-//   received_payload_t* next;
-//   received_payload_t* prev;
-// } received_payload_t;
 
 typedef struct {
   // received_packet_t* head;
@@ -90,7 +84,6 @@ typedef struct {
   struct timeval time_out;
   uint8_t state;
 } cmu_timer_t;
-
 
 typedef struct {
   uint32_t expect_seq;

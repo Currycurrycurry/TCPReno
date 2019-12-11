@@ -1,11 +1,7 @@
 from scapy.all import *
 import matplotlib.pyplot as plt
 
-#Change this to be your pcap file
-#You can capture a pcap file with wireshark or tcpdump
-#https://support.rackspace.com/how-to/capturing-packets-with-tcpdump/
-
-FILE_TO_READ = '/Users/Alex/Desktop/test.pcapng'
+FILE_TO_READ = './test3.pcap'
 
 packets = rdpcap(FILE_TO_READ)
 packet_list = []
@@ -31,5 +27,9 @@ for packet in packets:
 
 #https://matplotlib.org/users/pyplot_tutorial.html for how to format and make a good quality graph.
 print(packet_list)
+
 plt.scatter(packet_list, times)
+plt.xlabel('unacked packets')
+plt.ylabel('time')
+plt.savefig('./test3.png')
 plt.show()

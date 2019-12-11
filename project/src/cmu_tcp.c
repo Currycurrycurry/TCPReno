@@ -130,6 +130,7 @@ int fdu_listener_connect(cmu_socket_t *dst) {
  *  and the value returned will provide error information.
  *
  */
+
 int cmu_socket(cmu_socket_t *dst, int flag, int port, char *serverIP) {
   int sockfd, optval;
   socklen_t len;
@@ -482,7 +483,18 @@ void close_backend(cmu_socket_t * dst) {
   pthread_join(dst->thread_id, NULL); // 结束另外一个线程
 }
 
+
 int cmu_close(cmu_socket_t * sock) {
+
+/*
+ * Param: sock - The socket to close.
+ *
+ * Purpose: To remove any state tracking on the socket.
+ *
+ * Return: Returns error code information on the close operation.
+ *
+ */
+
   close_backend(sock);
   LOG_DEBUG("sock close backend");
   if(sock->type == TCP_INITATOR)
