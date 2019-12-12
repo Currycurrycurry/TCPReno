@@ -38,8 +38,13 @@
 #define CLOSED 6
 #define TIMER_ON 1
 
+#define SLOW_START 0
+#define CONGESTION_AVOIDANCE 1
+#define FAST_RECOVERY 2
+#define MSS 500 //unit:byte
 
-#define RCVBUFFER 23333 //temp value, should be revised later
+#define RCVBUFFER 65535 //temp value, should be revised later
+
 #define CONNECT_TIME_OUT 3000
 
 
@@ -68,6 +73,9 @@ typedef struct {
   pthread_mutex_t ack_cnt_lock;
   struct timeval send_time;
   struct timeval timeout;
+  uint16_t rwnd; // for flow control
+  uint16_t cwnd; // for congestion control
+  int ssthresh; // 
   cmu_tcpcb tp;
 } sender_window_t;
 
@@ -80,7 +88,6 @@ typedef struct {
 
   pthread_mutex_t sender_lock;
   pthread_mutex_t receiver_lock;
-
   int ack_cnt;
   pthread_mutex_t ack_lock;
 
@@ -111,6 +118,9 @@ typedef struct {
 #define STATUS_CLOSE_WAIT 8
 #define STATUS_LAST_ACK 9
 
+
+
+
 typedef struct {
   int socket;
   pthread_t thread_id;
@@ -118,7 +128,7 @@ typedef struct {
   uint16_t their_port;
   struct sockaddr_in conn;
   char* received_buf;
-  int received_len; //rcvbuffer
+  int received_len; 
   pthread_mutex_t recv_lock;
   pthread_cond_t wait_cond;
   char* sending_buf;
@@ -132,7 +142,6 @@ typedef struct {
   connection_t connection;
   int status;
   int syn_seq;
-  int rwnd; // for flow control
 } cmu_socket_t;
 
 #endif

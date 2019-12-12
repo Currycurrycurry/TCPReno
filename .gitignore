@@ -9,9 +9,13 @@ project/client
 project/server
 project/test/testing_server
 project/test/testfile_19M.pdf
+project/test/testfile_19M_copy.pdf
 project/test.png
 project/test1.pcap
 project/test2.pcap
 project/test3.pcap
 project/test3.png
+project/utils/submit.pcap
+project/test/random_copy.input
+project/test/file.c
 

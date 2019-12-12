@@ -68,6 +68,9 @@ int fdu_initiator_connect(cmu_socket_t *dst) {
   dst->window.sender->nextseq = dst->window.sender->base;
   dst->window.sender->timeout.tv_sec = DEFAULT_TIMEOUT_SEC;
   dst->window.sender->timeout.tv_usec = DEFAULT_TIMEOUT_USEC;
+  LOG_INFO("Before setting the rwnd:");
+  dst->window.sender->rwnd = RCVBUFFER; // add for flow control
+  LOG_INFO("the initiator rwnd is initialized to %d",dst->window.sender->rwnd);
 
   // initialize receiver
   // dst->window.receiver = create_pkt_window();
@@ -89,6 +92,7 @@ int fdu_listener_connect(cmu_socket_t *dst) {
   // status turns into SYN_RCVD and an SYNACK response will be made.
   check_for_data(dst, NO_FLAG);
 
+
   LOG_DEBUG("seq exchanged, waiting for ack");
 
   // check for the ACK packet for establish the connection, it also blocks. If
@@ -105,6 +109,9 @@ int fdu_listener_connect(cmu_socket_t *dst) {
   dst->window.sender->nextseq = dst->window.sender->base;
   dst->window.sender->timeout.tv_sec = DEFAULT_TIMEOUT_SEC;
   dst->window.sender->timeout.tv_usec = DEFAULT_TIMEOUT_USEC;
+  LOG_INFO("Before setting the rwnd:");
+  dst->window.sender->rwnd = RCVBUFFER; // add for flow control
+  LOG_INFO("the listner rwnd is initialized to %d",dst->window.sender->rwnd);
 
   // initialize receiver
   // dst->window.receiver = create_pkt_window();
@@ -160,8 +167,6 @@ int cmu_socket(cmu_socket_t *dst, int flag, int port, char *serverIP) {
   dst->window.last_seq_received = 0;
   pthread_mutex_init(&(dst->window.ack_lock), NULL);
 
-  //add for flow control
-  dst->rwnd = RCVBUFFER;
   if (pthread_cond_init(&dst->wait_cond, NULL) != 0) {
     perror("ERROR condition variable not set\n");
     return EXIT_ERROR;
@@ -261,11 +266,12 @@ int cmu_read(cmu_socket_t *sock, char *dst, int length, int flags) {
       }
     case NO_WAIT:
       if (sock->received_len > 0) {
-        if (sock->received_len > length)
+        if (sock->received_len > length){
           read_len = length;
-        else
+        } 
+        else{
           read_len = sock->received_len;
-
+        }
         memcpy(dst, sock->received_buf, read_len);
         if (read_len < sock->received_len) {
           new_buf = malloc(sock->received_len - read_len);
@@ -274,11 +280,14 @@ int cmu_read(cmu_socket_t *sock, char *dst, int length, int flags) {
           free(sock->received_buf);
           sock->received_len -= read_len;
           sock->received_buf = new_buf;
+        
         } else {
           free(sock->received_buf);
           sock->received_buf = NULL;
           sock->received_len = 0;
         }
+       
+
       }
       break;
     default:
@@ -383,7 +392,6 @@ void fdu_listener_disconnect(cmu_socket_t *sock){
 
       sendto(sock->socket, rsp, DEFAULT_HEADER_LEN, 0, (struct sockaddr*) &(sock->conn), conn_len);
       if(wait_ACK_time_out(sock) > 0) {
-//        sock->status = STATUS_FIN_WAIT_2;
         LOG_DEBUG("listener status : STATUS_FIN_WAIT_2");
         break;
       }
@@ -572,11 +580,12 @@ int wait_FIN_no_wait(cmu_socket_t * sock){
     }
     free(pkt);
     if(get_flags(hdr) == FIN_FLAG_MASK){
-      sock->window.receiver->expect_seq = get_seq(hdr) + 1;                             ////////////////////////////////////////////////////////////////
+      sock->window.receiver->expect_seq = get_seq(hdr) + 1; 
       return 1;
     }else{
       uint32_t ack = get_seq(hdr) + get_plen(hdr) - DEFAULT_HEADER_LEN;
       send_ACK(sock, sock->window.sender->nextseq,ack );
+      LOG_DEBUG("!!!STILL DATA PACKET TO RECEIVE!!!");
       // sock->window.receiver->expect_seq += get_plen(hdr) - DEFAULT_HEADER_LEN;
     }
   }

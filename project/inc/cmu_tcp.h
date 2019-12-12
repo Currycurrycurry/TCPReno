@@ -41,9 +41,8 @@ int fdu_initiator_connect(cmu_socket_t* dst);
 int fdu_listener_connect(cmu_socket_t* sock);
 
 
-
-
-
- 
+int wait_ACK_time_out(cmu_socket_t * sock);
+int wait_FIN_no_wait(cmu_socket_t * sock);
+int initator_wait_any_packet_no_wait(cmu_socket_t * sock);
 
 #endif
