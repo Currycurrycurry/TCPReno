@@ -11,6 +11,25 @@
 ## 模块说明
 
 ### TCP三次握手实现
+#### TCP握手过程
+* 第一次握手
+客户端(TCP连接发起方)向客户端发送一个特殊的报文段，该报文段中首部的SYN比特被置为1表示这是一个用于建立连接(即握手过程)的报文段。另外客户端还会随机选择一个初始序号，并将此编号置于该报文段的序号字段中。
+* 第二次握手
+客户端发送的SYN报文段到达服务器后，服务器提取SYN报文段，为该TCP连接分配缓存和变量，然后向客户端发送允许连接的报文。该报文段的SYN同样被置为1，确认号字段置为client_isn+1(client_isn即客户端发送的报文段的初始序号),同样服务器也随机选择一个初始序号(server_isn)置于报完段首部中。该允许连接的报文段称为SYNACK报文段。
+* 第三次握手
+客户端受到SYNACK报文段后，客户端也为该连接分配缓存和变量。然后向服务器发送最后一个确认报文段，客户端通过将sever_isn置于报文段的确认字段中来实现确认。因为连接已经建立，SYN被置为0，并且报文段可以包含数据。
+
+#### 握手实现
+* 用状态量来表示当前握手处于哪一阶段，通过维护一个状态机来实现TCP的握手过程
+* 用于握手的状态常量如下(其余状态量将用于数据传输过程和四次挥手过程)
+    * #define STATUS_SYN_SENT 1
+    * #define STATUS_ESTABLISHED 2
+    * #define STATUS_LISTEN 6
+    * #define STATUS_SYN_RCVD 7
+* 具体实现为两个函数，分别为客户端和服务器端的握手实现
+    int fdu_initiator_connect(cmu_socket_t *dst);
+    int fdu_listener_connect(cmu_socket_t *dst);
+    两个函数都调用void check_for_data(cmu_socket_t *sock, int flags);函数，来对收到的报文段进行处理，根据当前的状态dst->status，以及收到的报文段的FLAG来对status进行维护握手过程(包括数据传输和挥手的过程)
 
 ### TCP四次挥手实现
 
@@ -51,6 +70,30 @@ STATUS CLOSED： 挥手发起方和被动方在完成四次挥手动作后断开
 #### rwnd变量添加
 
 ### TCP拥塞控制实现
+
+#### 拥塞控制原理
+与流量控制的目的相同，拥塞控制也是为了实现限制发送方的发送速率来减少无效数据报的发送，以提高网络传输效率的策略。
+#### 实现方法
+通过在发送端的窗口中添加cwnd、ssthresh变量，以及congestion_status变量，维护一个有关拥塞控制的状态机来实现。
+状态机的三个状态如下:
+* #define SLOW_START 0
+* #define CONGESTION_AVOIDANCE 1
+* #define FAST_RECOVERY 2
+##### 慢启动(slow start)
+cwnd从初始值1 MSS(设置为500字节)开始，当新的ACK确认时，增加1 MSS。
+* 当出现timeout时，令ssthresh=cwnd/2(初始为64k-1即65535)，并开始下一次slow start。
+* 当cwnd>= ssthreshshi时，转移到拥塞避免状态(即设置变量congestion_status为SLOW_START)
+* 当冗余ACK(在实现快速重传中已经实现)达到3个时，转移到快速恢复状态
+##### 拥塞避免(congestion avoidance)
+在该状态下，每当新的ACK确认时，cwnd只增加 MSS*(MSS/cwnd)
+* 当出现timeout时，令ssthresh=cwnd/2，cwnd=MSS，转移到慢启动状态
+* 当冗余ACK达到3个时，令ssthresh=cwnd/2，cwnd=ssthresh+3*MSS,转移到快速恢复状态
+##### 快速恢复(fast recovery)
+在该状态下，每次收到冗余ACK且计数不大于3，cwnd+=MSS
+* 当冗余ACK达到3个或者timeout时，令ssthresh=cwnd/2，cwnd=MSS，转移到慢启动状态
+* 确认一个新的ACK时，cwnd=ssthresh，转移到拥塞控制状态
+
+![congestion.jpg](./assets/congestion.jpg)
 
 
 ### RTO Estimation

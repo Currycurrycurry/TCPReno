@@ -74,8 +74,9 @@ typedef struct {
   struct timeval send_time;
   struct timeval timeout;
   uint16_t rwnd; // for flow control
+  int congestion_status;
   uint16_t cwnd; // for congestion control
-  int ssthresh; // 
+  uint16_t ssthresh; // 
   cmu_tcpcb tp;
 } sender_window_t;
 

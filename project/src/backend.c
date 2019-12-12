@@ -133,6 +133,30 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
         if (ack > snd_wnd->base) {
           snd_wnd->base = ack;
           snd_wnd->ack_cnt = 0;
+          LOG_DEBUG("Congestion control: new ACK");
+          LOG_DEBUG("cwnd=MSS[%d],status=SLOW_START[%d],ssthresh=[%d]",snd_wnd->cwnd,snd_wnd->congestion_status,snd_wnd->ssthresh);
+          switch (snd_wnd->congestion_status)
+          {
+          case SLOW_START:
+            snd_wnd->cwnd += MSS;
+            if(snd_wnd->cwnd >= snd_wnd->ssthresh){
+              snd_wnd->congestion_status = CONGESTION_AVOIDANCE;
+              LOG_DEBUG("Congestion control get into congestion avoidance from slow start.");
+            }
+            break;
+          case CONGESTION_AVOIDANCE:
+            snd_wnd->cwnd += MSS * (MSS / snd_wnd->cwnd);
+            break;
+          case FAST_RECOVERY:
+            snd_wnd->cwnd = snd_wnd->ssthresh;
+            snd_wnd->congestion_status = CONGESTION_AVOIDANCE;
+            LOG_DEBUG("Congestion control get into congestion avoidance from fast recovery.");
+            break;
+          default:
+            LOG_DEBUG("Unknow congestion status [%d]",snd_wnd->congestion_status);
+            break;
+          }
+
           if (snd_wnd->nextseq > snd_wnd->base) {
             //  start_timer();
             tcp_xmit_timer(&(snd_wnd->tp),&(snd_wnd->send_time));
@@ -143,6 +167,9 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
           }
         } else {
           snd_wnd->ack_cnt++;
+          if(snd_wnd->congestion_status == FAST_RECOVERY){
+            snd_wnd->cwnd += MSS;
+          }
         }
         LOG_DEBUG("Before setting the sender's rwnd");
         LOG_DEBUG("the adv win is [%d]", get_advertised_window(pkt));
@@ -244,6 +271,7 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
         free(rsp);
       }
   }
+
 }
 
 /*
@@ -256,7 +284,7 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
  */
 
 void check_for_data(cmu_socket_t *sock, int flags) {
-  // LOG_DEBUG("enter check for data");
+  //LOG_DEBUG("enter check for data");
   char hdr[DEFAULT_HEADER_LEN];
   char *pkt;
   socklen_t conn_len = sizeof(sock->conn);
@@ -358,7 +386,7 @@ void single_send(cmu_socket_t *sock, char *data, int buf_len) {
       //adv win
       // if (buf_len > 0 && wnd->nextseq < wnd->base + MAX_WND_SIZE) {
       //  LOG_DEBUG("[%d] rwnd",wnd->rwnd);
-      if (buf_len > 0 && wnd->nextseq < wnd->base + wnd->rwnd) {
+      if (buf_len > 0 && wnd->nextseq < wnd->base + min(wnd->rwnd,wnd->cwnd)) {
         // we have more packets to make & send, the second branch is for flow
         // control
         LOG_DEBUG("[%d]buf_len", buf_len);
@@ -412,6 +440,46 @@ void single_send(cmu_socket_t *sock, char *data, int buf_len) {
       if (timeout(wnd) || wnd->ack_cnt == 3) {
         int dlen = min(MAX_DLEN, terminal_seq - wnd->base);
         LOG_DEBUG("RESEND [%d]seq [%d]dlen", wnd->base, dlen);
+        LOG_DEBUG("Congestion control: timeout");
+        LOG_DEBUG("cwnd=MSS[%d],status=SLOW_START[%d],ssthresh=[%d]",wnd->cwnd,wnd->congestion_status,wnd->ssthresh);
+        switch (wnd->congestion_status)
+        {
+        case SLOW_START:
+          if(wnd->ack_cnt == 3){
+            wnd->ssthresh = wnd->cwnd / 2;
+            wnd->cwnd = wnd->ssthresh + 3 * MSS;
+            wnd->congestion_status = FAST_RECOVERY;
+            LOG_DEBUG("Congestion status get into fast recovery from slow start.");
+          }else{
+            wnd->ssthresh = wnd->cwnd / 2;
+            wnd->cwnd = MSS;
+            LOG_DEBUG("Congestion status get into a new slow start from slow start.");
+          }
+          break;
+        case CONGESTION_AVOIDANCE:
+          if(wnd->ack_cnt == 3){
+            wnd->ssthresh = wnd->cwnd / 2;
+            wnd->cwnd = wnd->ssthresh + 3 * MSS;
+             wnd->congestion_status = FAST_RECOVERY;
+            LOG_DEBUG("Congestion status get into fast recovery from congestion avoidance.");
+          }else{
+            wnd->ssthresh = wnd->cwnd / 2;
+            wnd->cwnd = MSS;
+            wnd->congestion_status = SLOW_START;
+            LOG_DEBUG("Congestion status get into slow start from congestion avoidance.");
+          }
+          break;
+        case FAST_RECOVERY:
+          wnd->ssthresh = wnd->cwnd / 2;
+          wnd->cwnd = MSS;
+          wnd->congestion_status = SLOW_START;
+          LOG_DEBUG("Congestion status get into slow start from fast recovery.");
+          break;
+        default:
+          LOG_DEBUG("Unknow congestion status [%d]",wnd->congestion_status);
+          wnd->congestion_status = SLOW_START;
+          break;
+        }
         wnd->ack_cnt = 0;
         gettimeofday(&wnd->send_time, NULL);
         plen = DEFAULT_HEADER_LEN + dlen;  //?

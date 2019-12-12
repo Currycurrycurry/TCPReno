@@ -70,6 +70,12 @@ int fdu_initiator_connect(cmu_socket_t *dst) {
   dst->window.sender->timeout.tv_usec = DEFAULT_TIMEOUT_USEC;
   dst->window.sender->rwnd = RCVBUFFER - dst->received_len; // add for flow control
 
+  dst->window.sender->cwnd = MSS;
+  dst->window.sender->ssthresh = RCVBUFFER;
+  dst->window.sender->congestion_status = SLOW_START;
+  LOG_DEBUG("Set cwnd=MSS[%d],status=SLOW_START[%d],ssthresh=[%d]",dst->window.sender->cwnd,dst->window.sender->congestion_status,dst->window.sender->ssthresh);
+
+
 
   // initialize receiver
   // dst->window.receiver = create_pkt_window();
@@ -110,6 +116,10 @@ int fdu_listener_connect(cmu_socket_t *dst) {
   dst->window.sender->timeout.tv_usec = DEFAULT_TIMEOUT_USEC;
   dst->window.sender->rwnd = RCVBUFFER - dst->received_len; // add for flow control
 
+  dst->window.sender->cwnd = MSS;
+  dst->window.sender->ssthresh = RCVBUFFER;
+  dst->window.sender->congestion_status = SLOW_START;
+  LOG_DEBUG("Set cwnd=MSS[%d],status=SLOW_START[%d],ssthresh=[%d]",dst->window.sender->cwnd,dst->window.sender->congestion_status,dst->window.sender->ssthresh);
 
   // initialize receiver
   // dst->window.receiver = create_pkt_window();
