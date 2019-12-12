@@ -68,9 +68,8 @@ int fdu_initiator_connect(cmu_socket_t *dst) {
   dst->window.sender->nextseq = dst->window.sender->base;
   dst->window.sender->timeout.tv_sec = DEFAULT_TIMEOUT_SEC;
   dst->window.sender->timeout.tv_usec = DEFAULT_TIMEOUT_USEC;
-  LOG_INFO("Before setting the rwnd:");
-  dst->window.sender->rwnd = RCVBUFFER; // add for flow control
-  LOG_INFO("the initiator rwnd is initialized to %d",dst->window.sender->rwnd);
+  dst->window.sender->rwnd = RCVBUFFER - dst->received_len; // add for flow control
+
 
   // initialize receiver
   // dst->window.receiver = create_pkt_window();
@@ -109,9 +108,8 @@ int fdu_listener_connect(cmu_socket_t *dst) {
   dst->window.sender->nextseq = dst->window.sender->base;
   dst->window.sender->timeout.tv_sec = DEFAULT_TIMEOUT_SEC;
   dst->window.sender->timeout.tv_usec = DEFAULT_TIMEOUT_USEC;
-  LOG_INFO("Before setting the rwnd:");
-  dst->window.sender->rwnd = RCVBUFFER; // add for flow control
-  LOG_INFO("the listner rwnd is initialized to %d",dst->window.sender->rwnd);
+  dst->window.sender->rwnd = RCVBUFFER - dst->received_len; // add for flow control
+
 
   // initialize receiver
   // dst->window.receiver = create_pkt_window();

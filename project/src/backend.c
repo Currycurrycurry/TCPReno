@@ -4,7 +4,7 @@ void send_ACK(cmu_socket_t *sock, uint32_t seq, uint32_t ack) {
   socklen_t conn_len = sizeof(sock->conn);
   char *rsp = create_packet_buf(sock->my_port, ntohs(sock->conn.sin_port), seq,
                                 ack, DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN,
-                                ACK_FLAG_MASK,sock->window.sender->rwnd, 0, NULL, NULL, 0);
+                                ACK_FLAG_MASK,(uint16_t)(RCVBUFFER-(sock->received_len)), 0, NULL, NULL, 0);
   sendto(sock->socket, rsp, DEFAULT_HEADER_LEN, 0,
          (struct sockaddr *)&(sock->conn), conn_len);
   free(rsp);
@@ -146,7 +146,7 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
         }
         LOG_DEBUG("Before setting the sender's rwnd");
         LOG_DEBUG("the adv win is [%d]", get_advertised_window(pkt));
-        LOG_DEBUG("send_wnd->rwnd [%d]",snd_wnd->rwnd);
+        LOG_DEBUG("ack packet: send_wnd->rwnd [%d]",snd_wnd->rwnd);
         snd_wnd->rwnd = get_advertised_window(pkt);
         LOG_DEBUG("After : send_wnd->rwnd [%d]",snd_wnd->rwnd);
       }
@@ -223,6 +223,8 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
             }
             memcpy(sock->received_buf + sock->received_len, rcv_wnd->buf, i);
             sock->received_len += i;
+         
+            
             rcv_wnd->expect_seq += i;
           }
           ack = rcv_wnd->expect_seq;
@@ -231,11 +233,11 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
         }
        
         snd_wnd->rwnd = get_advertised_window(pkt);
-        LOG_DEBUG("set the sender window's rwnd to be [%d] ",snd_wnd->rwnd);
+        LOG_DEBUG("data packet: set the sender window's rwnd to be [%d] ",snd_wnd->rwnd);
         
         rsp = create_packet_buf(sock->my_port, ntohs(sock->conn.sin_port), 0,
                                 ack, DEFAULT_HEADER_LEN, DEFAULT_HEADER_LEN,
-                                ACK_FLAG_MASK,sock->window.sender->rwnd, 0, NULL, NULL, 0);
+                                ACK_FLAG_MASK,(uint16_t)(RCVBUFFER-(sock->received_len)), 0, NULL, NULL, 0);
         LOG_DEBUG("send ACK [%d]ack [%d]expect_seq", ack, rcv_wnd->expect_seq);
         sendto(sock->socket, rsp, DEFAULT_HEADER_LEN, 0,
                (struct sockaddr *)&(sock->conn), conn_len);
@@ -356,7 +358,7 @@ void single_send(cmu_socket_t *sock, char *data, int buf_len) {
       //adv win
       // if (buf_len > 0 && wnd->nextseq < wnd->base + MAX_WND_SIZE) {
       //  LOG_DEBUG("[%d] rwnd",wnd->rwnd);
-      if (buf_len > 0 && wnd->nextseq < wnd->base + wnd->rwnd ) {
+      if (buf_len > 0 && wnd->nextseq < wnd->base + wnd->rwnd) {
         // we have more packets to make & send, the second branch is for flow
         // control
         LOG_DEBUG("[%d]buf_len", buf_len);
@@ -367,14 +369,14 @@ void single_send(cmu_socket_t *sock, char *data, int buf_len) {
                                   sock->window.last_seq_received +
                                       1,  // in case the ack packet is lost, and
                                           // handshake not finished
-                                  DEFAULT_HEADER_LEN, plen, NO_FLAG,sock->window.sender->rwnd, 0, NULL,
+                                  DEFAULT_HEADER_LEN, plen, NO_FLAG,(uint16_t)(RCVBUFFER-(sock->received_len)), 0, NULL,
                                   data_offset, buf_len);
           buf_len = 0;
         } else {
           plen = DEFAULT_HEADER_LEN + MAX_DLEN;
           msg = create_packet_buf(sock->my_port, sock->their_port, wnd->nextseq,
                                   sock->window.last_seq_received + 1,
-                                  DEFAULT_HEADER_LEN, plen, NO_FLAG,sock->window.sender->rwnd, 0, NULL,
+                                  DEFAULT_HEADER_LEN, plen, NO_FLAG,(uint16_t)(RCVBUFFER-(sock->received_len)), 0, NULL,
                                   data_offset, MAX_DLEN);
           buf_len -= MAX_DLEN;
         }
@@ -385,7 +387,23 @@ void single_send(cmu_socket_t *sock, char *data, int buf_len) {
                conn_len);
         free(msg);
         msg = NULL;
+      } else if (wnd->rwnd == 0)
+      //continue to send data packets with the length 1
+      {
+        plen = DEFAULT_HEADER_LEN + 1;
+        msg = create_packet_buf(sock->my_port,sock->their_port,wnd->nextseq,
+                                sock->window.last_seq_received+1,DEFAULT_HEADER_LEN,plen,
+                                NO_FLAG,(uint16_t)(RCVBUFFER-(sock->received_len)),0,NULL,data_offset,1);
+        buf_len -=1;
+        LOG_DEBUG("[%d]seq sent, [%d]plen", wnd->nextseq,plen);
+        wnd->nextseq += plen - DEFAULT_HEADER_LEN;
+        data_offset = data_offset + plen - DEFAULT_HEADER_LEN;
+        sendto(sockfd, msg, plen, 0, (struct sockaddr *)&(sock->conn),
+               conn_len);
+        free(msg);
+        msg = NULL;
       }
+      
 
       // try to receive data, waiting for ack
       check_for_data(sock, NO_WAIT);
@@ -399,7 +417,7 @@ void single_send(cmu_socket_t *sock, char *data, int buf_len) {
         plen = DEFAULT_HEADER_LEN + dlen;  //?
         msg = create_packet_buf(sock->my_port, sock->their_port, wnd->base,
                                 sock->window.last_seq_received,
-                                DEFAULT_HEADER_LEN, plen, NO_FLAG,sock->window.sender->rwnd, 0, NULL,
+                                DEFAULT_HEADER_LEN, plen, NO_FLAG,(uint16_t)(RCVBUFFER-(sock->received_len)), 0, NULL,
                                 data + wnd->base - initial_seq, dlen);
         sendto(sockfd, msg, plen, 0, (struct sockaddr *)&(sock->conn),
                conn_len);
