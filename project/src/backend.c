@@ -292,7 +292,6 @@ void check_for_data(cmu_socket_t *sock, int flags) {
   uint32_t plen = 0, buf_size = 0, n = 0;
   fd_set ackFD;
   struct timeval time_out;
-
   time_out.tv_sec=3;
   time_out.tv_usec=0;
 
@@ -482,7 +481,7 @@ void single_send(cmu_socket_t *sock, char *data, int buf_len) {
         }
         wnd->ack_cnt = 0;
         gettimeofday(&wnd->send_time, NULL);
-        plen = DEFAULT_HEADER_LEN + dlen;  //?
+        plen = DEFAULT_HEADER_LEN + dlen;
         msg = create_packet_buf(sock->my_port, sock->their_port, wnd->base,
                                 sock->window.last_seq_received,
                                 DEFAULT_HEADER_LEN, plen, NO_FLAG,(uint16_t)(RCVBUFFER-(sock->received_len)), 0, NULL,

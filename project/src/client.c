@@ -20,8 +20,8 @@ void functionality(cmu_socket_t *sock) {
   printf("N: %d\n", n);
 
   // fp = fopen("./test/testfile_19M.pdf", "rb");
-  fp = fopen("./src/cmu_tcp.c", "rb");
-  // fp = fopen("./test/random.input", "rb");
+  // fp = fopen("./src/cmu_tcp.c", "rb");
+  fp = fopen("./test/random.input", "rb");
   printf("*** finish fp open ***");
   n = 0;
   read = 1;
