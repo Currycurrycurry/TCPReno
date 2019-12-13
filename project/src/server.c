@@ -26,8 +26,8 @@ void functionality(cmu_socket_t *sock) {
     n += read;
   }
   printf("N: %d\n", n);
-  fp = fopen("./test/file.c", "w+");
-  // fp = fopen("./test/random_copy.input", "w+");
+  // fp = fopen("./test/file.c", "w+");
+  fp = fopen("./test/random_copy.input", "w+");
   // fp = fopen("./test/testfile_19M_copy.pdf", "w+");
   fwrite(buf, 1, n, fp);
 }

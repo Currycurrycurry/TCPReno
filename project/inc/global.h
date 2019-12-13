@@ -67,8 +67,6 @@ typedef struct {
   uint32_t base;
   uint32_t nextseq;
   uint32_t estmated_rtt;
-  void** win_packet_buffer;
-  // uint16_t buffer_next;
   int ack_cnt;
   pthread_mutex_t ack_cnt_lock;
   struct timeval send_time;

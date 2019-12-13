@@ -1,7 +1,7 @@
 from scapy.all import *
 import matplotlib.pyplot as plt
 
-FILE_TO_READ = './test3.pcap'
+FILE_TO_READ = './test4.pcap'
 
 packets = rdpcap(FILE_TO_READ)
 packet_list = []
@@ -31,5 +31,5 @@ print(packet_list)
 plt.scatter(packet_list, times)
 plt.xlabel('unacked packets')
 plt.ylabel('time')
-plt.savefig('./test3.png')
+plt.savefig('./test4.png')
 plt.show()
