@@ -536,47 +536,47 @@ void *begin_backend(void *in) {
 
 void onAck(cmu_socket_t *sock, char *pkt){
 
-  send_time = pkt->send_time;
-  delivered = pkt->delivered;
-  delivered_time = pkt->delivered_time;
-  app_limited = pkt->app_limited;
-
-  struct timeval current;
-  gettimeofday(&current, NULL);
-  int rtt = current.tv_sec - pkt->send_time.tv_sec;
-  RTpropFilter.minRTT = rtt < RTpropFilter.minRTT ? rtt : RTpropFilter.minRTT;
-  pkt.ext_data->delivered_time = current;
-  int deliveryRate = (delivered - pkt.delivered) / (current - pkt.delivered_time);
-
-  if (deliveryRate > pkt->BtlBwFilter.curentMax || !pkt.app_limited);
-  BtlBwFilter.curentMax = deliveryRate > BtlBwFilter.curentMax ? deliveryRate : BtlBwFilter.curentMax;
-  if (app_limited_until > 0)
-    pkt->app_limited_until -= pkt.size;
+//  send_time = pkt->send_time;
+//  delivered = pkt->delivered;
+//  delivered_time = pkt->delivered_time;
+//  app_limited = pkt->app_limited;
+//
+//  struct timeval current;
+//  gettimeofday(&current, NULL);
+//  int rtt = current.tv_sec - pkt->send_time.tv_sec;
+//  RTpropFilter.minRTT = rtt < RTpropFilter.minRTT ? rtt : RTpropFilter.minRTT;
+//  pkt.ext_data->delivered_time = current;
+//  int deliveryRate = (delivered - pkt.delivered) / (current - pkt.delivered_time);
+//
+//  if (deliveryRate > pkt->BtlBwFilter.curentMax || !pkt.app_limited);
+//  BtlBwFilter.curentMax = deliveryRate > BtlBwFilter.curentMax ? deliveryRate : BtlBwFilter.curentMax;
+//  if (app_limited_until > 0)
+//    pkt->app_limited_until -= pkt.size;
 
 }
 
-void send(cmu_socket_t *sock, char *pkt,socklen_t conn_len){
+void send_to_cp3(cmu_socket_t *sock, char *pkt,socklen_t conn_len){
 
-  double bdp = BtlBwFilter.currentMax * RTpropFilter.currentMin;
-  if (inflight >= cwnd_gain*bdp)
-//wait for ack or timeout
-    return;
-  struct timeval current;
-  gettimeofday(&current, NULL);
-
-  if (current.tv_sec - nextSendTime.tv_sec >= 0)
-    pkt = nextPacketToSend();
-  if (!(pkt.exits())){
-    pkt.app_limited_until = inflight;
-    return;
-  };
-  pkt.app_limited = (app_limited_until > 0);
-  pkt.sendtime = now;
-  pkt.delivered = delivered;
-  pkt.delivered_time = delivered_time;
-  ship(pkt);
-  double nextSendTime = current.tv_sec + packet.size/(pacing_gain * BtlBwFilter.currentMax);
-  timerCallbackAt(send, nextSendTime);
-  sendto(sock->socket, pkt, DEFAULT_HEADER_LEN, 0,
-         (struct sockaddr *)&(sock->conn), conn_len);
+//  double bdp = BtlBwFilter.currentMax * RTpropFilter.currentMin;
+//  if (inflight >= cwnd_gain*bdp)
+////wait for ack or timeout
+//    return;
+//  struct timeval current;
+//  gettimeofday(&current, NULL);
+//
+//  if (current.tv_sec - nextSendTime.tv_sec >= 0)
+//    pkt = nextPacketToSend();
+//  if (!(pkt.exits())){
+//    pkt.app_limited_until = inflight;
+//    return;
+//  };
+//  pkt.app_limited = (app_limited_until > 0);
+//  pkt.sendtime = now;
+//  pkt.delivered = delivered;
+//  pkt.delivered_time = delivered_time;
+//  ship(pkt);
+//  double nextSendTime = current.tv_sec + packet.size/(pacing_gain * BtlBwFilter.currentMax);
+//  timerCallbackAt(send, nextSendTime);
+//  sendto(sock->socket, pkt, DEFAULT_HEADER_LEN, 0,
+//         (struct sockaddr *)&(sock->conn), conn_len);
 }
