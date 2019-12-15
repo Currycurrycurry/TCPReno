@@ -41,7 +41,7 @@
 #define SLOW_START 0
 #define CONGESTION_AVOIDANCE 1
 #define FAST_RECOVERY 2
-#define MSS 500 //unit:byte
+#define MSS 1375 //unit:byte
 
 #define RCVBUFFER 65535 //temp value, should be revised later
 

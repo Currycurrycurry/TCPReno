@@ -20,9 +20,9 @@ void functionality(cmu_socket_t *sock) {
   printf("N: %d\n", n);
 
   // fp = fopen("./test/testfile_19M.pdf", "rb");
-  // fp = fopen("./src/cmu_tcp.c", "rb");
-  fp = fopen("./test/random.input", "rb");
-  printf("*** finish fp open ***");
+  fp = fopen("./src/cmu_tcp.c", "rb");
+  // fp = fopen("./test/random.input", "rb");
+  // printf("*** finish fp open ***");
   n = 0;
   read = 1;
   while (read > 0) {
@@ -69,8 +69,14 @@ int main(int argc, char **argv) {
     exit(EXIT_FAILURE);
   }
 
+  // struct timeval start_time;
+  // struct timeval end_time;
+  // gettimeofday(&start_time,NULL);
   functionality(&socket);
-  // while(1);
+  // gettimeofday(&end_time,NULL);
+  LOG_DEBUG("client finished");
+  // long int time = end_time.tv_sec-start_time.tv_sec;
+  // LOG_DEBUG("***The total client send time is [%ld] s***",time);
 
   if (cmu_close(&socket) < 0) exit(EXIT_FAILURE);
   return EXIT_SUCCESS;

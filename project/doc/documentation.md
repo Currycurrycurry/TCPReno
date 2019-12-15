@@ -2,11 +2,12 @@
 
 ## 成员说明
 
-- 17302010063 黄佳妮
-- 17302010029 卢永强
-- 17302010018 周钰承
-- 17302010051 杨辉
+- 17302010063 黄佳妮 sliding window,retransimission,flow control of cp1 and cp2, also coordinating between team members
+- 17302010029 卢永强 4-way handwaving and self-defined cca research in cp3
+- 17302010018 周钰承 rto calculation and self-defined cca research in cp3
+- 17302010051 杨辉 3-way handshaking and congestion control of cp1 and cp2
 
+*To make our explanation understandable, we will just explain our design in Chinese*
 
 ## 模块说明
 
@@ -140,6 +141,10 @@ rto = (sa >> 3) + sv;
 ​	上述所有的值都将在cmu_tcpcb这一结构体中被维护，每次收到一个ack包后，都将利用ack包中的时间戳，通过tcp_xmit_timer()这一个函数来获得该包的RTT，并且更新RTO时间。
 
 
+
+## 结果分析
+
+![./assets/test6.png](./assets/test6.png)
 
 
 
