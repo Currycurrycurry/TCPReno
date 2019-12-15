@@ -71,7 +71,7 @@ int fdu_initiator_connect(cmu_socket_t *dst) {
   dst->window.sender->rwnd = RCVBUFFER - dst->received_len; // add for flow control
 
   dst->window.sender->cwnd = MSS;
-  dst->window.sender->ssthresh = RCVBUFFER;
+  dst->window.sender->ssthresh = WINDOW_INITIAL_SSTHRESH;
   dst->window.sender->congestion_status = SLOW_START;
   LOG_DEBUG("Set cwnd=MSS[%d],status=SLOW_START[%d],ssthresh=[%d]",dst->window.sender->cwnd,dst->window.sender->congestion_status,dst->window.sender->ssthresh);
 
@@ -455,12 +455,7 @@ int free_cmu_socket(cmu_socket_t * sock) {
       LOG_DEBUG("freed receiver now");
     }
     if(sock->window.sender != NULL) {
-//      for(int i = 0; i < sock->window.sender->window_size; i++) {
-//          LOG_DEBUG("=====[%d]",i);
-//        if(sock->window.sender->win_packet_buffer[i] != NULL) {
-//          free(sock->window.sender->win_packet_buffer[i]);
-//        }
-//      }
+
       free(sock->window.sender);
       LOG_DEBUG("freed sender now");
     }

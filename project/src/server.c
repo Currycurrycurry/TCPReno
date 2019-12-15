@@ -26,8 +26,8 @@ void functionality(cmu_socket_t *sock) {
     n += read;
   }
   printf("N: %d\n", n);
-  // fp = fopen("./test/file.c", "w+");
-  fp = fopen("./test/random_copy.input", "w+");
+  fp = fopen("./test/file.c", "w+");
+  // fp = fopen("./test/random_copy.input", "w+");
   // fp = fopen("./test/testfile_19M_copy.pdf", "w+");
   fwrite(buf, 1, n, fp);
 }
@@ -67,9 +67,14 @@ int main(int argc, char **argv) {
     LOG_ERROR("socket initialize error, bad return code");
     exit(EXIT_FAILURE);
   }
- 
+  // struct timeval start_time;
+  // struct timeval end_time;
+  // gettimeofday(&start_time,NULL);
   functionality(&socket);
+  // gettimeofday(&end_time,NULL);
   LOG_DEBUG("server finished");
+  // long int time = end_time.tv_sec-start_time.tv_sec;
+  // LOG_DEBUG("***The total server recieve time is [%ld] s***",time);
   // while(1);
 
   if (cmu_close(&socket) < 0) exit(EXIT_FAILURE);

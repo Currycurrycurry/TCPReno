@@ -18,4 +18,6 @@ project/test3.png
 project/utils/submit.pcap
 project/test/random_copy.input
 project/test/file.c
+project/test*.png
+project/test*.pcap
 

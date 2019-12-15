@@ -109,6 +109,8 @@ where the time window $W_B$ is typically six to ten RTTs.
 
 ### Question2.2	How long does it take for your new CCA to transfer a 20MB file? How long does it take your Reno implementation? 
 
+About 15s in out own Reno implementation.
+
 ### Question2.3	What is different about your new CCA that makes it perform better than Reno in transferring 20MB files?
 
 ​	We have already explained the reasons why BBR algorithm perform much better than TCP's loss-based congestion control. In fact, the former can make transition adapt to the current bottleneck much more quickly than tradition one(AIMD principle). Secondly,  in stead of sending $cwnd$ Packets once time (it will increase queueing length in a short time), BBR algorithm set a proper send pacing rate (
@@ -118,6 +120,8 @@ $$
 ) in the client to reduce congestion in buffer. Moreover, it decreases the queueing delay which is important to Data Center. As we can see, long queueing delay in the buffer will causes lots of unnecessary retransmits and waste bandwidth. What’s worse, traditional CC have a slower response to congestion that might will lead to a long persistent queue or even packet loss. Last of all, BBR avoids lot of bufferbloat condition, thus improving the throughput a lot.
 
 ### Question2.4	How long does it take for your new CCA to transfer a 3MB file? How long does it take your Reno implementation? 
+
+ About 3s in our own implementation.
 
 ### Question2.5	Explain why one algorithm performs better than the other, or why they perform equally. 	
 

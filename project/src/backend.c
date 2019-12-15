@@ -205,7 +205,7 @@ void handle_message(cmu_socket_t *sock, char *pkt) {
 
 
     default:
-      // LOG_DEBUG("receive payload packet");
+      LOG_DEBUG("receive payload packet");
       // if (rand() % 5 == 0) {
       //   LOG_DEBUG("DROP");
       //   break;
@@ -479,6 +479,7 @@ void single_send(cmu_socket_t *sock, char *data, int buf_len) {
           wnd->congestion_status = SLOW_START;
           break;
         }
+        
         wnd->ack_cnt = 0;
         gettimeofday(&wnd->send_time, NULL);
         plen = DEFAULT_HEADER_LEN + dlen;
