@@ -1,39 +1,57 @@
-# Project
+# Project: Build TCP based on UDP
 
-## Files
-```
-README.md: This readme file
-Vagrantfile: Vagrantfile for creating VMs
-project/: Starter code
-project/Makefile: Makefile to build your code
-project/gen_graph.py: Example code to generate graph of unacked packets vs. time
-project/src: C files for your transport protcol (CMU TCP) implementation
-project/src/backend.c: Code for emulating packet buffering and sending
-project/src/client.c: Code for the client side of CMU TCP
-project/src/server.c: Code for the server side of CMU TCP
-project/src/cmu_tcp.c: Code for reading, writing, opening, and closing CMU TCP sockets
-project/src/cmu_packet.c: Code for creating and parsing CMU TCP packets
-project/inc: Header files for CMU TCP imeplementation
-project/inc/backend.h: Defines API for handing packet buffering and sending
-project/inc/cmu_tcp.h: Defines API for CMU TCP scockets. DO NOT CHANGE THESE FUNCTION SIGNATURES.
-project/inc/cmu_packet.h: Defines CMU TCP header format, CMU TCP packet data structure, and API for creating and buffering packets
-project/inc/global.h: Defines some global variables as well as socket and window data structures
-project/inc/grading.h: Defines variables the TA's will use to test your implementation
-project/utils/: Utilities to help you with testing your code
-project/utils/capture_packets.sh: A simple program showing how you can start and stop packet captures,as well as analyze packets using tshark.
-project/utils/tcp.lua: A Lua plugin so Wireshark can dissect CMU TCP packets
-project/test/: Example testing code
-project/test/test_cp1.py: Code using pytest to test your CMU TCP implementation
-project/test/testing_server.c: Code for starting a testing CMU TCP server that listens for data from initiator, and tries to send a file
-project/test/test.pcap: Example pcap file that starter test code uses
-project/test/random.input: You can generate this file by running make test to generate this random 1M file that you can use to test file transfers
-```
+## Files' Structure
 
-## Install Vagrant & VirutalBox
+### project prerequisites
+
++ README.md: This readme file
++ Vagrantfile: Vagrantfile for creating VMs
++ project/: Starter code
++ project/Makefile: Makefile to build your code
++ project/gen_graph.py: code to generate graph of unacked packets vs. time
+
+### src part
+
++ project/src: C files for your transport protocol (FDU TCP) implementation
++ project/src/backend.c: Code for emulating packet buffering and sending
++ project/src/client.c: Code for the client side of FDU TCP
++ project/src/server.c: Code for the server side of FDU TCP
++ project/src/cmu_tcp.c: Code for reading, writing, opening, and closing FDU TCP sockets
++ project/src/cmu_packet.c: Code for creating and parsing FDU TCP packets
+
+### inc part
+
++ project/inc: Header files for FDU TCP imeplementation
++ project/inc/backend.h: Defines API for handing packet buffering and sending
++ project/inc/cmu_tcp.h: Defines API for FDU TCP scockets. DO NOT CHANGE THESE FUNCTION SIGNATURES.
++ project/inc/cmu_packet.h: Defines FDU TCP header format, FDU TCP packet data structure, and API for creating and buffering packets
++ project/inc/global.h: Defines some global variables as well as socket and window data structures
++ project/inc/grading.h: Defines variables the TA's will use to test your implementation
+
+### utils part
+
++ project/utils/: Utilities to help you with testing your code
++ project/utils/capture_packets.sh: A simple program showing how you can start and stop packet captures,as well as analyze packets using tshark.
++ project/utils/tcp.lua: A Lua plugin so Wireshark can dissect FDU TCP packets
+
+### test part
+
++ project/test/: Example testing code
++ project/test/test_cp1.py: Code using pytest to test your FDU TCP implementation
++ project/test/testing_server.c: Code for starting a testing FDU TCP server that listens for data from initiator, and tries to send a file
++ project/test/test.pcap: Example pcap file that starter test code uses
++ project/test/random.input: You can generate this file by running make test to generate this random 1M file that you can use to test file transfers
+
+
+## Environment Prerequisites 
+
+### Install Vagrant & VirutalBox
+
 If you are having trouble running Vagrant  make sure your versions of Vagrant and VirtualBox are up to date.
 
 
-## Run VM
+### Run VM
+
 ```
 vagrant up
 ```
@@ -70,6 +88,7 @@ python3 gen_graph.py
 ```
 
 ## capture_packets.sh
+
 You can generate submit.pcap by running the following commands:
 
 Start the server and the tcpdump:
@@ -95,14 +114,16 @@ vagrant@server:/vagrant/project$: utils/capture_packets.sh analyze submit.pcap
 ```
 
 ## tcp.lua
+
 ```capture_packets.sh``` analyze functions shows how you can use this Lua plugin to
-view CMU packets.
+view FDU packets.
 
 You can use tcp.lua to view packets in the Wireshark GUI by adding it to the Wireshark
 plugins folder on your computer.
 
 
 ## Running pytest tests
+
 Before running pytest you should generate submit.pcap, as the tests are run on the PCAP
 file.
 
