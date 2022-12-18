@@ -76,6 +76,8 @@ typedef struct {
   uint16_t cwnd; // for congestion control
   uint16_t ssthresh; // 
   cmu_tcpcb tp;
+//    RTprop_Filter RTpropFilter;
+//    BtlBW_Filter BtlBwFilter;
 } sender_window_t;
 
 typedef struct {
@@ -142,5 +144,16 @@ typedef struct {
   int status;
   int syn_seq;
 } cmu_socket_t;
+
+typedef struct {
+  int minRTT;
+  struct timeval last_modified;
+} RTprop_Filter;
+
+typedef struct {
+int curentMax;
+//double pacing_gain[8] = {1.25,0.75,1,1,1,1,1,1};
+} BtlBW_Filter;
+
 
 #endif
